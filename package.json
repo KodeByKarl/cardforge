@@ -13,6 +13,7 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "dist": "npm run typecheck && npm run test && npm run build && electron-builder --win --x64",
+    "test:e2e": "node tests/e2e/run.mjs",
     "test:corel": "vitest run --config vitest.integration.config.ts"
   },
   "dependencies": {

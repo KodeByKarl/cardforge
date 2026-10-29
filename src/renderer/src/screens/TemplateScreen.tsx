@@ -1,9 +1,10 @@
-import { useEffect, useMemo, useRef, useState, type DragEvent } from 'react'
+import { useEffect, useMemo, useRef, useState, type DragEvent, type KeyboardEvent } from 'react'
 import { objectNamesByPosition, suggestMapping } from '../../../shared/template/mapping'
 import type { MappingEntry, SavedMapping, TemplateObject, TemplateRecord, TemplateSourceStatus } from '../../../shared/template/types'
 import type { ScreenKey } from '../App'
 import { api, errorMessage, unwrap } from '../api'
-import { Badge, Banner, PageHeader } from '../components/ui'
+import { Icon } from '../components/icons'
+import { Badge, Banner, Button, Dialog, EmptyState, PageHeader, StatusDot, type Tone } from '../components/ui'
 import { X7Notice } from '../components/X7Notice'
 import { useJob } from '../state/job'
 import { pageLabel, useTemplates } from '../state/templates'
@@ -36,57 +37,55 @@ export function TemplateScreen({ navigate }: { navigate: (s: ScreenKey) => void 
         title="Template setup"
         description="Choose a CorelDRAW template and connect its named text objects to spreadsheet columns."
         actions={
-          <button className="btn btn-primary" disabled={busy !== null} onClick={() => runImport(() => unwrap(api.templates.pickAndImport()))}>
+          <Button variant="primary" loading={busy !== null} disabled={busy !== null} onClick={() => runImport(() => unwrap(api.templates.pickAndImport()))}>
             Add template…
-          </button>
+          </Button>
         }
       />
-      <div className="space-y-2 px-6 pt-3 empty:hidden">
-        {busy && <Banner tone="info" title={busy} />}
-        {(error ?? listError) && (
-          <Banner tone="error" title="Template problem">
-            {error ?? listError}
-          </Banner>
-        )}
-      </div>
-      <div className="flex min-h-0 flex-1">
-        <aside className="flex w-72 shrink-0 flex-col border-r border-stone-200 dark:border-stone-800">
+      {(busy || error || listError) && (
+        <div className="space-y-1.5 border-b border-line px-4 py-2">
+          {busy && <Banner tone="info" title={busy} />}
+          {(error ?? listError) && (
+            <Banner tone="error" title="Template problem">
+              {error ?? listError}
+            </Banner>
+          )}
+        </div>
+      )}
+      <div className="grid min-h-0 flex-1 grid-cols-[minmax(160px,200px)_minmax(0,1fr)] wide:grid-cols-[256px_minmax(0,1fr)]">
+        <aside className="flex min-h-0 flex-col border-r border-line bg-surface-2" aria-label="Template library">
           <TemplateDrop disabled={busy !== null} onPath={(path) => runImport(() => unwrap(api.templates.import(path)))} />
-          <div className="min-h-0 flex-1 overflow-y-auto px-3 pb-3">
-            {list.length === 0 && <p className="muted px-1 py-6 text-center">No templates yet.</p>}
+          <ul className="min-h-0 flex-1 space-y-0.5 overflow-y-auto px-2 pb-2">
+            {list.length === 0 && <li className="muted px-1 py-4 text-center">No templates yet.</li>}
             {list.map((t) => (
-              <button
-                key={t.id}
-                onClick={() => select(t.id)}
-                className={`mb-1 w-full rounded-md px-3 py-2 text-left ${
-                  selected?.id === t.id ? 'bg-white shadow-sm ring-1 ring-stone-200 dark:bg-stone-800 dark:ring-stone-700' : 'hover:bg-stone-200/60 dark:hover:bg-stone-800/60'
-                }`}
-              >
-                <p className="truncate font-medium">{t.name}</p>
-                <p className="muted text-xs">
-                  {t.pages.length === 2 ? 'Front + back' : `${t.pages.length} page${t.pages.length === 1 ? '' : 's'}`} · {t.objectCount} named objects
-                  {t.hasMapping ? ' · mapped' : ''}
-                </p>
-              </button>
+              <li key={t.id}>
+                <button
+                  type="button"
+                  onClick={() => select(t.id)}
+                  aria-current={selected?.id === t.id ? 'true' : undefined}
+                  className={`w-full rounded px-2 py-1.5 text-left ${selected?.id === t.id ? 'bg-surface font-medium shadow-card' : 'hover:bg-hover'}`}
+                >
+                  <p className="truncate">{t.name}</p>
+                  <p className="truncate text-xs text-fg-muted">
+                    {t.pages.length === 2 ? 'Front + back' : `${t.pages.length} page${t.pages.length === 1 ? '' : 's'}`} · {t.objectCount} objects
+                    {t.hasMapping ? ' · mapped' : ''}
+                  </p>
+                </button>
+              </li>
             ))}
-          </div>
+          </ul>
         </aside>
-        <main className="min-w-0 flex-1 overflow-y-auto">
-          {selected ? <TemplateDetail key={selected.id} record={selected} navigate={navigate} onBusy={setBusy} onError={setError} /> : <NoSelection />}
-        </main>
+        <div className="min-h-0 min-w-0">
+          {selected ? (
+            <TemplateDetail key={selected.id} record={selected} navigate={navigate} onBusy={setBusy} onError={setError} />
+          ) : (
+            <EmptyState title="Select or add a template">
+              In CorelDRAW, give every variable text object a name in the Object Manager (for example FullName, JobTitle, Email). Static artwork stays unnamed. The original file is never modified: CardForge keeps its own
+              copy.
+            </EmptyState>
+          )}
+        </div>
       </div>
-    </div>
-  )
-}
-
-function NoSelection() {
-  return (
-    <div className="mx-auto max-w-lg p-10 text-center">
-      <p className="font-medium">Select or add a template</p>
-      <p className="muted mt-1">
-        In CorelDRAW, give every variable text object a name in the Object Manager (for example FullName, JobTitle, Email). Static artwork stays
-        unnamed. The original file is never modified: CardForge keeps its own copy.
-      </p>
     </div>
   )
 }
@@ -107,18 +106,23 @@ function TemplateDrop({ onPath, disabled }: { onPath: (path: string) => void; di
     onPath(api.excel.pathForFile(file))
   }
   return (
-    <div className="p-3">
+    <div className="p-2">
       <div
+        data-testid="template-drop"
         onDragOver={(e) => {
           e.preventDefault()
           setOver(true)
         }}
         onDragLeave={() => setOver(false)}
         onDrop={onDrop}
-        className={`rounded-lg border-2 border-dashed px-3 py-4 text-center text-xs ${over ? 'border-teal-600 bg-teal-50 dark:bg-teal-950/40' : 'border-stone-300 dark:border-stone-700'}`}
+        className={`rounded border border-dashed px-3 py-2.5 text-center text-xs ${over ? 'border-accent bg-accent-soft' : 'border-line-strong text-fg-muted'}`}
       >
         Drop a .cdr template here
-        {rejected && <p className="mt-1 text-red-700 dark:text-red-400">{rejected}</p>}
+        {rejected && (
+          <p className="mt-1 text-err" role="alert">
+            {rejected}
+          </p>
+        )}
       </div>
     </div>
   )
@@ -176,6 +180,7 @@ function TemplateDetail({
   }
 
   const remove = async () => {
+    setConfirmRemove(false)
     try {
       await unwrap(api.templates.remove(record.id))
       await select(null)
@@ -187,12 +192,14 @@ function TemplateDetail({
 
   const first = pages[0]
   return (
-    <div className="space-y-5 p-6">
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <div>
-          <h2 className="text-base font-semibold">{record.name}</h2>
-          <p className="muted text-xs break-all">{record.sourcePath}</p>
-          <div className="mt-2 flex flex-wrap gap-1.5">
+    <div className="flex h-full min-h-0 flex-col">
+      <div className="flex flex-wrap items-start gap-x-4 gap-y-2 border-b border-line bg-surface px-4 py-2.5">
+        <div className="min-w-0 flex-1">
+          <h2 className="truncate text-base">{record.name}</h2>
+          <p className="truncate text-xs text-fg-muted" title={record.sourcePath}>
+            {record.sourcePath}
+          </p>
+          <div className="mt-1.5 flex flex-wrap gap-1">
             {first && (
               <Badge>
                 {first.widthMm} × {first.heightMm} mm
@@ -205,85 +212,104 @@ function TemplateDetail({
           </div>
         </div>
         <div className="flex gap-2">
-          <button className="btn" onClick={reinspect}>
-            Re-inspect
-          </button>
-          {confirmRemove ? (
-            <>
-              <button className="btn border-red-700 bg-red-700 text-white hover:bg-red-800" onClick={remove}>
-                Remove from library
-              </button>
-              <button className="btn" onClick={() => setConfirmRemove(false)}>
-                Keep
-              </button>
-            </>
-          ) : (
-            <button className="btn" onClick={() => setConfirmRemove(true)}>
-              Remove…
-            </button>
+          <Button onClick={reinspect}>Re-inspect</Button>
+          <Button onClick={() => setConfirmRemove(true)}>Remove…</Button>
+        </div>
+      </div>
+
+      {(source && (!source.exists || source.changed)) && (
+        <div className="space-y-1.5 border-b border-line px-4 py-2">
+          {!source.exists && (
+            <Banner tone="info" title="The original file is no longer at its imported location.">
+              The library copy is still used, so generation is unaffected.
+            </Banner>
+          )}
+          {source.changed && (
+            <Banner
+              tone="warn"
+              title="The original template has changed since it was imported."
+              actions={
+                <Button onClick={reimport} className="h-6 px-2 text-xs">
+                  Import new version
+                </Button>
+              }
+            >
+              Cards are generated from the imported version. The mapping is carried over.
+            </Banner>
+          )}
+        </div>
+      )}
+
+      {/* Two panes when there is room (artwork | mapping); one scrolling column otherwise. */}
+      <div className="grid min-h-0 flex-1 grid-cols-1 overflow-y-auto lg:grid-cols-[minmax(240px,4fr)_minmax(0,7fr)] lg:overflow-hidden">
+        <section aria-label="Template pages" className="border-b border-line bg-canvas p-3 lg:overflow-y-auto lg:border-b-0 lg:border-r">
+          <div className="flex flex-wrap justify-center gap-4 lg:flex-col lg:items-center">
+            {pages.map((p) => {
+              const img = images.find((i) => i.pageIndex === p.index)
+              return (
+                <figure key={p.index} className="w-full" style={{ maxWidth: `min(100%, calc(34vh * ${p.widthMm / p.heightMm}))` }}>
+                  <div className="relative bg-white shadow-card" style={{ aspectRatio: `${p.widthMm} / ${p.heightMm}` }}>
+                    {img ? <img src={img.dataUrl} alt={`${pageLabel(p.index, pages.length)} of ${record.name}`} className="h-full w-full" draggable={false} /> : <p className="p-3 text-xs text-fg-muted">No image</p>}
+                    {record.inspection.objects
+                      .filter((o) => o.pageIndex === p.index)
+                      .map((o, i) => (
+                        <ObjectBox key={`${o.name}-${i}`} object={o} widthMm={p.widthMm} heightMm={p.heightMm} active={highlight === o.name} />
+                      ))}
+                  </div>
+                  <figcaption className="mt-1 text-center text-xs tabular-nums text-fg-muted">
+                    {pageLabel(p.index, pages.length)} · {p.widthMm} × {p.heightMm} mm
+                  </figcaption>
+                </figure>
+              )
+            })}
+          </div>
+          <div className="mt-3 empty:hidden">
+            <X7Notice version={record.inspection.corelVersion} compact />
+          </div>
+        </section>
+
+        <div className="flex min-h-0 flex-col bg-surface">
+          <MappingEditor record={record} onHighlight={setHighlight} onError={onError} onImport={() => navigate('import')} />
+          {issues.length > 0 && (
+            <ul className="shrink-0 space-y-0.5 border-t border-line bg-surface-2 px-4 py-2" aria-label="Mapping check">
+              {issues.map((i, n) => (
+                <li key={n} className={`flex items-start gap-1.5 ${i.severity === 'error' ? 'text-err' : 'text-warn'}`}>
+                  <Icon name="alert" size={13} className="mt-0.5" />
+                  <span>
+                    {i.objectName ? <strong>{i.objectName}: </strong> : null}
+                    {i.message}
+                  </span>
+                </li>
+              ))}
+            </ul>
+          )}
+          {!dataset && (
+            <div className="shrink-0 border-t border-line p-2">
+              <Banner tone="info" title="Import a spreadsheet to map columns." actions={<Button onClick={() => navigate('import')} className="h-6 px-2 text-xs">Go to Excel import</Button>} />
+            </div>
           )}
         </div>
       </div>
 
-      <X7Notice version={record.inspection.corelVersion} />
-      {source && !source.exists && (
-        <Banner tone="info" title="The original file is no longer at its imported location.">
-          The library copy is still used, so generation is unaffected.
-        </Banner>
-      )}
-      {source?.changed && (
-        <Banner tone="warn" title="The original template has changed since it was imported.">
-          <span>Cards are generated from the imported version. </span>
-          <button className="underline" onClick={reimport}>
-            Import the new version
-          </button>
-          <span> (the mapping is carried over).</span>
-        </Banner>
-      )}
-
-      <section>
-        <h3 className="eyebrow mb-2">Template pages (exported by CorelDRAW)</h3>
-        <div className="flex flex-wrap gap-4">
-          {pages.map((p) => {
-            const img = images.find((i) => i.pageIndex === p.index)
-            return (
-              <figure key={p.index} className="w-full max-w-md">
-                <div className="relative overflow-hidden rounded border border-stone-300 bg-white dark:border-stone-700" style={{ aspectRatio: `${p.widthMm} / ${p.heightMm}` }}>
-                  {img ? <img src={img.dataUrl} alt={`${pageLabel(p.index, pages.length)} of ${record.name}`} className="h-full w-full" /> : <p className="muted p-4">No image</p>}
-                  {record.inspection.objects
-                    .filter((o) => o.pageIndex === p.index)
-                    .map((o, i) => (
-                      <ObjectBox key={`${o.name}-${i}`} object={o} widthMm={p.widthMm} heightMm={p.heightMm} active={highlight === o.name} />
-                    ))}
-                </div>
-                <figcaption className="muted mt-1 text-xs">
-                  {pageLabel(p.index, pages.length)} · {p.widthMm} × {p.heightMm} mm
-                </figcaption>
-              </figure>
-            )
-          })}
-        </div>
-      </section>
-
-      <MappingEditor record={record} onHighlight={setHighlight} onError={onError} />
-
-      {issues.length > 0 && (
-        <section className="space-y-1.5">
-          <h3 className="eyebrow">Mapping check</h3>
-          {issues.map((i, n) => (
-            <p key={n} className={i.severity === 'error' ? 'text-red-700 dark:text-red-400' : 'text-amber-800 dark:text-amber-300'}>
-              {i.objectName ? <strong>{i.objectName}: </strong> : null}
-              {i.message}
-            </p>
-          ))}
-        </section>
-      )}
-      {!dataset && (
-        <Banner tone="info" title="Import a spreadsheet to map columns.">
-          <button className="underline" onClick={() => navigate('import')}>
-            Go to Excel import
-          </button>
-        </Banner>
+      {confirmRemove && (
+        <Dialog
+          title="Remove template from library?"
+          onClose={() => setConfirmRemove(false)}
+          footer={
+            <>
+              <Button data-autofocus onClick={() => setConfirmRemove(false)}>
+                Keep template
+              </Button>
+              <Button variant="danger-solid" onClick={remove}>
+                Remove from library
+              </Button>
+            </>
+          }
+        >
+          <p>
+            “{record.name}” and its saved mapping are removed from CardForge. The original .cdr file is not touched.
+          </p>
+        </Dialog>
       )}
     </div>
   )
@@ -299,7 +325,7 @@ function ObjectBox({ object, widthMm, heightMm, active }: { object: TemplateObje
   }
   return (
     <div
-      className={`pointer-events-none absolute border ${active ? 'border-2 border-teal-600 bg-teal-500/15' : 'border-dashed border-teal-600/40'}`}
+      className={`pointer-events-none absolute border ${active ? 'border-2 border-overlay bg-overlay/20' : 'border-dashed border-overlay/50'}`}
       style={style}
       title={object.name}
     />
@@ -315,7 +341,7 @@ function entryValue(entry: MappingEntry | undefined): string {
   return `col:${entry.columnLabel}`
 }
 
-function MappingEditor({ record, onHighlight, onError }: { record: TemplateRecord; onHighlight: (name: string | null) => void; onError: (m: string | null) => void }) {
+function MappingEditor({ record, onHighlight, onError, onImport }: { record: TemplateRecord; onHighlight: (name: string | null) => void; onError: (m: string | null) => void; onImport: () => void }) {
   const { update, resolved } = useTemplates()
   const { dataset } = useJob()
   const [mapping, setMapping] = useState<SavedMapping>(record.mapping ?? { version: 1, entries: {} })
@@ -358,24 +384,62 @@ function MappingEditor({ record, onHighlight, onError }: { record: TemplateRecor
     persist({ version: 1, entries })
   }
 
+  const statusOf = (name: string): { tone: Tone; label: string } => {
+    const res = resolved.get(name)
+    if (res?.kind === 'missing') return { tone: 'error', label: 'Column missing' }
+    if (res?.kind === 'column') return { tone: 'ok', label: 'Mapped' }
+    if (res?.kind === 'blank') return { tone: 'neutral', label: 'Blank' }
+    return { tone: 'warn', label: 'Template text' }
+  }
+  const counts = names.reduce(
+    (acc, n) => {
+      const k = resolved.get(n)?.kind
+      if (k === 'column') acc.mapped++
+      else if (k === 'missing') acc.missing++
+      else if (k === 'blank') acc.blank++
+      else acc.keep++
+      return acc
+    },
+    { mapped: 0, missing: 0, blank: 0, keep: 0 }
+  )
+
+  const onRowKey = (e: KeyboardEvent<HTMLTableRowElement>, name: string) => {
+    if (e.key === 'Escape') onHighlight(null)
+    else onHighlight(name)
+  }
+
   return (
-    <section>
-      <div className="mb-2 flex items-center gap-3">
-        <h3 className="eyebrow">Field mapping</h3>
-        <span className="muted text-xs">{saveState === 'saved' ? 'Saved to this template' : saveState === 'saving' ? 'Saving…' : 'Not saved yet'}</span>
-        <button className="btn ml-auto" disabled={!dataset} onClick={autoMatch}>
-          Auto-match columns
-        </button>
+    <section className="flex min-h-0 flex-1 flex-col" aria-label="Field mapping">
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-1 border-b border-line px-4 py-2">
+        <h3 className="text-sm">Field mapping</h3>
+        <p className="text-xs text-fg-muted" aria-live="polite">
+          <span className="font-semibold text-ok">{counts.mapped}</span> mapped
+          {counts.keep > 0 && <> · <span className="font-semibold text-warn">{counts.keep}</span> keep template text</>}
+          {counts.missing > 0 && <> · <span className="font-semibold text-err">{counts.missing}</span> missing column</>}
+          {counts.blank > 0 && <> · {counts.blank} blank</>} · {saveState === 'saved' ? 'saved' : saveState === 'saving' ? 'saving…' : 'not saved yet'}
+        </p>
+        <Button className="ml-auto" disabled={!dataset} onClick={autoMatch} title={dataset ? 'Match object names to column headers' : 'Import a spreadsheet first'}>
+          Auto-match
+        </Button>
       </div>
-      <div className="panel overflow-x-auto">
+      <div className="min-h-0 flex-1 overflow-auto">
+        {!dataset && (
+          <p className="muted border-b border-line bg-surface-2 px-4 py-1.5 text-xs">
+            No spreadsheet is loaded, so there are no columns to choose from.{' '}
+            <button type="button" className="text-accent underline" onClick={onImport}>
+              Import data
+            </button>
+          </p>
+        )}
         <table className="w-full border-separate border-spacing-0">
           <thead>
             <tr>
+              <th className="table-head w-6">
+                <span className="sr-only">Status</span>
+              </th>
               <th className="table-head">Text object</th>
-              <th className="table-head">Where</th>
-              <th className="table-head">Template text</th>
-              <th className="table-head">Format</th>
-              <th className="table-head w-64">Fill from</th>
+              <th className="table-head compact:hidden">Template text</th>
+              <th className="table-head w-[min(15rem,40%)]">Fill from</th>
             </tr>
           </thead>
           <tbody>
@@ -383,29 +447,35 @@ function MappingEditor({ record, onHighlight, onError }: { record: TemplateRecor
               const objs = record.inspection.objects.filter((o) => o.name === name)
               const o = objs[0]!
               const res = resolved.get(name)
+              const status = statusOf(name)
               const value = entryValue(mapping.entries[name])
               const savedLabel = mapping.entries[name]?.kind === 'column' ? (mapping.entries[name] as { columnLabel: string }).columnLabel : null
+              const column = res?.kind === 'column' ? res.column : null
               return (
-                <tr key={name} onMouseEnter={() => onHighlight(name)} onMouseLeave={() => onHighlight(null)} className="hover:bg-stone-50 dark:hover:bg-stone-900">
-                  <td className="table-cell font-medium">{name}</td>
-                  <td className="table-cell muted text-xs">
-                    {[...new Set(objs.map((x) => pageLabel(x.pageIndex, pages)))].join(' + ')}
-                    {o.path.length > 0 && <span> · in {o.path.join(' › ')}</span>}
-                  </td>
-                  <td className="table-cell max-w-[220px] truncate" title={o.text}>
-                    {o.text || <span className="muted italic">empty</span>}
-                  </td>
-                  <td className="table-cell text-xs">
-                    {o.font} {o.sizePt}pt{o.bold ? ' bold' : ''}
-                    {o.isParagraph && <Badge>frame</Badge>} {o.mixedFormatting && <Badge tone="warn">mixed</Badge>}
+                <tr key={name} onMouseEnter={() => onHighlight(name)} onMouseLeave={() => onHighlight(null)} onFocus={() => onHighlight(name)} onKeyDown={(e) => onRowKey(e, name)} className="hover:bg-surface-2 focus-within:bg-surface-2">
+                  <td className="table-cell pt-2">
+                    <StatusDot tone={status.tone} label={status.label} />
                   </td>
                   <td className="table-cell">
-                    <select
-                      className={`input h-7 w-full ${res?.kind === 'missing' ? 'border-red-500' : ''}`}
-                      value={value}
-                      onChange={(e) => setEntry(name, e.target.value)}
-                      aria-label={`Fill ${name} from`}
-                    >
+                    <p className="flex flex-wrap items-center gap-1 font-medium">
+                      {name}
+                      {column ? (column.required ? <Badge tone="info">Required</Badge> : <Badge>Optional</Badge>) : null}
+                      {o.isParagraph && <Badge>frame</Badge>}
+                      {o.mixedFormatting && <Badge tone="warn">mixed</Badge>}
+                    </p>
+                    <p className="text-xs text-fg-muted">
+                      {[...new Set(objs.map((x) => pageLabel(x.pageIndex, pages)))].join(' + ')}
+                      {o.path.length > 0 && <span> · in {o.path.join(' › ')}</span>}
+                      {' · '}
+                      {o.font} {o.sizePt}pt{o.bold ? ' bold' : ''}
+                    </p>
+                    <p className={`text-xs ${status.tone === 'error' ? 'text-err' : status.tone === 'warn' ? 'text-warn' : 'text-fg-muted'}`}>{status.label}</p>
+                  </td>
+                  <td className="table-cell max-w-[200px] truncate text-fg-muted compact:hidden" title={o.text}>
+                    {o.text || <span className="italic">empty</span>}
+                  </td>
+                  <td className="table-cell">
+                    <select className="input h-control w-full" aria-invalid={res?.kind === 'missing' || undefined} value={value} onChange={(e) => setEntry(name, e.target.value)} aria-label={`Fill ${name} from`}>
                       <option value={KEEP}>Keep template text</option>
                       <option value={BLANK}>Leave blank</option>
                       {columns.map((c) => (
@@ -413,9 +483,7 @@ function MappingEditor({ record, onHighlight, onError }: { record: TemplateRecor
                           {c.label}
                         </option>
                       ))}
-                      {savedLabel && !columns.some((c) => c.label === savedLabel) && (
-                        <option value={`col:${savedLabel}`}>{savedLabel} (not in current sheet)</option>
-                      )}
+                      {savedLabel && !columns.some((c) => c.label === savedLabel) && <option value={`col:${savedLabel}`}>{savedLabel} (not in current sheet)</option>}
                     </select>
                   </td>
                 </tr>

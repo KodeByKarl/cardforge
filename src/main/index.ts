@@ -1,5 +1,5 @@
 import { join } from 'node:path'
-import { BrowserWindow, app, shell } from 'electron'
+import { BrowserWindow, app, nativeTheme, screen, shell } from 'electron'
 import { IPC_EVENTS } from '../shared/ipc'
 import { registerIpc } from './ipc'
 import { initLogger, log } from './logger'
@@ -11,15 +11,18 @@ import { TemplateStore } from './services/templates/TemplateStore'
 import { SettingsStore } from './settings'
 
 function createWindow(): BrowserWindow {
+  // Sizes are in DIPs, so they already account for Windows display scaling (1366x768 at 150% is a 910x512 screen).
+  // The minimum must fit such screens; the renderer's layout is verified down to this size.
+  const work = screen.getPrimaryDisplay().workAreaSize
   const win = new BrowserWindow({
-    width: 1360,
-    height: 860,
-    minWidth: 1024,
-    minHeight: 680,
+    width: Math.min(1360, work.width),
+    height: Math.min(860, work.height),
+    minWidth: Math.min(800, work.width),
+    minHeight: Math.min(480, work.height),
     show: false,
     title: 'CardForge',
     autoHideMenuBar: true,
-    backgroundColor: '#f6f6f4',
+    backgroundColor: nativeTheme.shouldUseDarkColors ? '#161614' : '#f4f3f0',
     webPreferences: {
       preload: join(__dirname, '../preload/index.js'),
       contextIsolation: true,

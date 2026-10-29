@@ -3,6 +3,9 @@ import { createRoot } from 'react-dom/client'
 import { App } from './App'
 import { ErrorBoundary } from './components/ErrorBoundary'
 import './index.css'
+import { applyStoredTheme } from './state/theme'
+
+applyStoredTheme()
 
 // Stop a file dropped outside a drop zone from being opened by the browser engine.
 window.addEventListener('dragover', (e) => e.preventDefault())

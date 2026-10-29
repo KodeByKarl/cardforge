@@ -5,7 +5,8 @@ import type { GenerationPlan, GenerationRequest, JobSummary, ResolvedOverwrite }
 import type { AppSettings } from '../../../shared/types'
 import type { ScreenKey } from '../App'
 import { api, errorMessage, unwrap } from '../api'
-import { Badge, Banner, PageHeader, Stat, StatusDot } from '../components/ui'
+import { Icon } from '../components/icons'
+import { Badge, Banner, Button, Dialog, EmptyState, PageHeader, Progress, Section, StatusDot, useToast, type Tone } from '../components/ui'
 import { X7Notice } from '../components/X7Notice'
 import { useCorelStatus } from '../state/corel'
 import { useGeneration } from '../state/generation'
@@ -17,6 +18,7 @@ export function GenerateScreen({ navigate }: { navigate: (s: ScreenKey) => void 
   const { selected: template, resolved, issues } = useTemplates()
   const { status: corel } = useCorelStatus()
   const generation = useGeneration()
+  const toast = useToast()
   const [settings, setSettings] = useState<AppSettings | null>(null)
   const [outputDir, setOutputDir] = useState('')
   const [pattern, setPattern] = useState('')
@@ -26,11 +28,14 @@ export function GenerateScreen({ navigate }: { navigate: (s: ScreenKey) => void 
   const [confirmCancel, setConfirmCancel] = useState(false)
 
   useEffect(() => {
-    unwrap(api.settings.get()).then((s) => {
-      setSettings(s)
-      setOutputDir(s.outputDirectory ?? '')
-      setPattern(s.fileNamePattern)
-    }, (err) => setError(errorMessage(err)))
+    unwrap(api.settings.get()).then(
+      (s) => {
+        setSettings(s)
+        setOutputDir(s.outputDirectory ?? '')
+        setPattern(s.fileNamePattern)
+      },
+      (err) => setError(errorMessage(err))
+    )
   }, [])
 
   const inputs = useMemo(
@@ -41,6 +46,8 @@ export function GenerateScreen({ navigate }: { navigate: (s: ScreenKey) => void 
   const mappingBlocked = hasBlockingMappingIssues(issues)
   const unmapped = issues.filter((i) => i.message.startsWith('Not mapped')).length
   const ready = !!dataset && !!template && !mappingBlocked && inputs.records.length > 0 && !!corel?.available && outputDir.length > 0 && pattern.trim().length > 0
+  const progress = generation.progress
+  const running = generation.running
 
   const buildRequest = (overwrite: ResolvedOverwrite): GenerationRequest => ({
     templateId: template!.id,
@@ -65,14 +72,18 @@ export function GenerateScreen({ navigate }: { navigate: (s: ScreenKey) => void 
 
   const onGenerate = async () => {
     setError(null)
+    setStarting(true)
     const policy = settings?.overwritePolicy ?? 'ask'
     // "ask" checks for existing files first and lets the operator decide; nothing is overwritten silently.
     const request = buildRequest(policy === 'ask' ? 'skip' : policy)
     try {
       const plan = await unwrap(api.generation.plan(request))
-      if (plan.conflicts > 0 && policy === 'ask') setConflict({ plan, request })
-      else await start(request)
+      if (plan.conflicts > 0 && policy === 'ask') {
+        setStarting(false)
+        setConflict({ plan, request })
+      } else await start(request)
     } catch (err) {
+      setStarting(false)
       setError(errorMessage(err))
     }
   }
@@ -82,189 +93,231 @@ export function GenerateScreen({ navigate }: { navigate: (s: ScreenKey) => void 
     if (dir) setOutputDir(dir)
   }
 
-  const progress = generation.progress
-  const running = generation.running
   const lastJob: JobSummary | undefined = progress && !running ? generation.history.find((j) => j.id === progress.jobId) : undefined
+  const blocker = !dataset || inputs.records.length === 0 ? 'Import records first' : !template ? 'Choose a template first' : mappingBlocked ? 'Fix the field mapping first' : !corel?.available ? 'CorelDRAW is not available' : !outputDir ? 'Choose an output folder' : null
 
   return (
-    <div className="h-full overflow-y-auto">
-      <PageHeader title="Generate to CorelDRAW" description="Creates one editable CDR file per employee from the template. Printing is done by the operator in CorelDRAW." />
-      <div className="grid max-w-5xl gap-4 p-6">
-        {error && (
+    <div className="flex h-full flex-col">
+      <PageHeader
+        title="Generate to CorelDRAW"
+        description="One editable CDR file per employee. Printing is done in CorelDRAW."
+        actions={
+          running ? (
+            <Button variant="danger" onClick={() => setConfirmCancel(true)}>
+              Cancel generation…
+            </Button>
+          ) : (
+            <Button variant="primary" loading={starting} disabled={!ready || starting} onClick={onGenerate} title={blocker ?? undefined} data-testid="generate-button">
+              <Icon name="generate" size={14} />
+              {`Generate ${inputs.records.length} card${inputs.records.length === 1 ? '' : 's'} to CorelDRAW`}
+            </Button>
+          )
+        }
+      />
+      {error && (
+        <div className="border-b border-line px-4 py-2">
           <Banner tone="error" title="Generation problem">
             {error}
           </Banner>
-        )}
-
-        <section className="panel divide-y divide-stone-100 dark:divide-stone-800">
-          <h2 className="eyebrow px-4 py-2.5">Ready to generate?</h2>
-          <Check
-            ok={!!dataset && inputs.records.length > 0}
-            label="Records"
-            value={
-              dataset
-                ? `${inputs.records.length} of ${dataset.records.length} records from ${state.workbook?.fileName ?? 'the spreadsheet'}${inputs.excluded.length ? ` · ${inputs.excluded.length} excluded because of errors` : ''}`
-                : 'No spreadsheet imported'
-            }
-            action={<button className="btn" onClick={() => navigate('import')}>Review</button>}
-          />
-          <Check
-            ok={!!template && !mappingBlocked}
-            warn={!!template && !mappingBlocked && unmapped > 0}
-            label="Template and mapping"
-            value={
-              !template
-                ? 'No template selected'
-                : mappingBlocked
-                  ? 'The mapping has errors'
-                  : `${template.name}${unmapped ? ` · ${unmapped} object(s) keep their template text` : ''}`
-            }
-            action={<button className="btn" onClick={() => navigate('template')}>Review</button>}
-          />
-          <Check
-            ok={!!corel?.available}
-            warn={!!corel?.available && !corel.isX7}
-            label="CorelDRAW"
-            value={!corel ? 'Checking…' : corel.available ? `${corel.progId}${corel.isX7 ? ' (X7)' : ' — not X7, validation pending'}` : corel.detail}
-          />
-        </section>
-
-        <section className="panel space-y-4 p-4">
-          <h2 className="eyebrow">Output</h2>
-          <div>
-            <p className="mb-1.5 font-medium">Output folder</p>
-            <div className="flex gap-2">
-              <input className="input flex-1 font-mono text-xs" readOnly value={outputDir} placeholder="Choose a folder" />
-              <button className="btn" onClick={pickFolder} disabled={running}>
-                Choose…
-              </button>
-            </div>
-          </div>
-          <div>
-            <p className="mb-1.5 font-medium">File names</p>
-            <input className="input w-full font-mono text-xs" value={pattern} onChange={(e) => setPattern(e.target.value)} disabled={running} aria-label="File name pattern" />
-            <p className="muted mt-1 text-xs">
-              {'{row}'} = spreadsheet row, {'{col:Header}'} = any column. Example: {sampleNames.join(', ') || '—'}
-            </p>
-          </div>
-          <p className="muted text-xs">
-            Existing files: {settings?.overwritePolicy === 'skip' ? 'skipped' : settings?.overwritePolicy === 'suffix' ? 'kept; new files get a number suffix' : 'you will be asked first'} (change in Settings). Files are saved in
-            CorelDRAW X7 (v17) format.
-          </p>
-          <X7Notice version={corel?.isX7 ? 'Version 17' : (template?.inspection.corelVersion ?? null)} compact />
-        </section>
-
-        {conflict && (
-          <section className="panel border-amber-300 p-4 dark:border-amber-800">
-            <p className="font-medium">
-              {conflict.plan.conflicts} of {conflict.plan.items.length} files already exist in this folder.
-            </p>
-            <ul className="muted mt-1 list-disc pl-5 text-xs">
-              {conflict.plan.items
-                .filter((i) => i.exists)
-                .slice(0, 5)
-                .map((i) => (
-                  <li key={i.fileName}>{i.fileName}</li>
-                ))}
+        </div>
+      )}
+      <div className="grid min-h-0 flex-1 grid-cols-1 overflow-y-auto wide:grid-cols-[minmax(360px,2fr)_minmax(0,3fr)] wide:overflow-hidden">
+        <div className="space-y-5 p-4 wide:overflow-y-auto wide:border-r wide:border-line">
+          <Section title="Before you generate">
+            <ul className="divide-y divide-line border-y border-line">
+              <Check
+                tone={!!dataset && inputs.records.length > 0 ? 'ok' : 'error'}
+                label="Records"
+                value={
+                  dataset
+                    ? `${inputs.records.length} of ${dataset.records.length} from ${state.workbook?.fileName ?? 'the spreadsheet'}${inputs.excluded.length ? ` · ${inputs.excluded.length} excluded (errors)` : ''}`
+                    : 'No spreadsheet imported'
+                }
+                action={<Button onClick={() => navigate('import')}>Review</Button>}
+              />
+              <Check
+                tone={!template || mappingBlocked ? 'error' : unmapped > 0 ? 'warn' : 'ok'}
+                label="Template and mapping"
+                value={!template ? 'No template selected' : mappingBlocked ? 'The mapping has errors' : `${template.name}${unmapped ? ` · ${unmapped} object(s) keep their template text` : ''}`}
+                action={<Button onClick={() => navigate('template')}>Review</Button>}
+              />
+              <Check
+                tone={!corel ? 'neutral' : !corel.available ? 'error' : corel.isX7 ? 'ok' : 'warn'}
+                label="CorelDRAW"
+                value={!corel ? 'Checking…' : corel.available ? `${corel.progId}${corel.isX7 ? ' (X7)' : ' — not X7, validation pending'}` : corel.detail}
+              />
             </ul>
-            <div className="mt-3 flex flex-wrap gap-2">
-              <button className="btn btn-primary" onClick={() => start({ ...conflict.request, overwrite: 'skip' })}>
-                Skip existing files
-              </button>
-              <button className="btn" onClick={() => start({ ...conflict.request, overwrite: 'suffix' })}>
-                Keep both (add number)
-              </button>
-              <button className="btn border-red-700 text-red-700 dark:text-red-400" onClick={() => start({ ...conflict.request, overwrite: 'overwrite' })}>
-                Overwrite {conflict.plan.conflicts} file(s)
-              </button>
-              <button className="btn btn-ghost" onClick={() => setConflict(null)}>
-                Cancel
-              </button>
-            </div>
-          </section>
-        )}
+          </Section>
 
-        {!running && !conflict && (
-          <div>
-            <button className="btn btn-primary h-10 px-5 text-[15px]" disabled={!ready || starting} onClick={onGenerate}>
-              {starting ? 'Starting…' : `Generate ${inputs.records.length} card${inputs.records.length === 1 ? '' : 's'} to CorelDRAW`}
-            </button>
-          </div>
-        )}
-
-        {progress && (
-          <section className="panel p-4">
-            <div className="flex flex-wrap items-center gap-x-8 gap-y-3">
-              <Stat label="Done" value={`${progress.done} / ${progress.total || inputs.records.length}`} />
-              <Stat label="Created" value={progress.succeeded} tone="ok" />
-              <Stat label="Failed" value={progress.failed} tone={progress.failed ? 'error' : 'neutral'} />
-              <Stat label="Skipped" value={progress.skipped} />
-              {running && (
-                <div className="ml-auto">
-                  {confirmCancel ? (
-                    <span className="flex items-center gap-2">
-                      <span className="muted text-xs">Stop after the current card?</span>
-                      <button
-                        className="btn border-red-700 text-red-700 dark:text-red-400"
-                        onClick={() => {
-                          void api.generation.cancel(progress.jobId)
-                          setConfirmCancel(false)
-                        }}
-                      >
-                        Stop
-                      </button>
-                      <button className="btn" onClick={() => setConfirmCancel(false)}>
-                        Continue
-                      </button>
-                    </span>
-                  ) : (
-                    <button className="btn" onClick={() => setConfirmCancel(true)}>
-                      Cancel…
-                    </button>
-                  )}
+          <Section title="Output">
+            <div className="space-y-3">
+              <div>
+                <label htmlFor="out-dir" className="mb-1 block font-medium">
+                  Output folder
+                </label>
+                <div className="flex gap-2">
+                  <input id="out-dir" className="input min-w-0 flex-1 font-mono text-xs" readOnly value={outputDir} placeholder="Choose a folder" />
+                  <Button onClick={pickFolder} disabled={running}>
+                    <Icon name="folder" size={14} />
+                    Choose…
+                  </Button>
                 </div>
-              )}
+              </div>
+              <div>
+                <label htmlFor="file-pattern" className="mb-1 block font-medium">
+                  File names
+                </label>
+                <input id="file-pattern" className="input w-full font-mono text-xs" value={pattern} onChange={(e) => setPattern(e.target.value)} disabled={running} />
+                <p className="muted mt-1 text-xs">
+                  {'{row}'} = spreadsheet row, {'{col:Header}'} = any column. Example: {sampleNames.join(', ') || '—'}
+                </p>
+              </div>
+              <p className="muted text-xs">
+                Existing files: {settings?.overwritePolicy === 'skip' ? 'skipped' : settings?.overwritePolicy === 'suffix' ? 'kept; new files get a number suffix' : 'you will be asked first'} (change in Settings). Files are saved in CorelDRAW X7
+                (v17) format.
+              </p>
+              <X7Notice version={corel?.isX7 ? 'Version 17' : (template?.inspection.corelVersion ?? null)} compact />
             </div>
-            <div className="mt-3 h-2 overflow-hidden rounded bg-stone-200 dark:bg-stone-800">
-              <div className="h-full bg-teal-600 transition-[width]" style={{ width: `${progress.total ? (progress.done / progress.total) * 100 : 0}%` }} />
-            </div>
-            <p className="muted mt-2 text-xs">
-              {running
-                ? progress.current
-                  ? `Working on row ${progress.current.rowNumber}: ${progress.current.fileName}`
-                  : 'Opening the template in CorelDRAW…'
-                : progress.status === 'completed'
-                  ? 'Finished.'
-                  : progress.status === 'cancelled'
-                    ? 'Stopped by the operator. Cards created so far are kept.'
-                    : `Stopped: ${progress.error ?? 'error'}`}
-            </p>
-            {!running && lastJob && <Completion job={lastJob} />}
-            <JobLog />
-          </section>
-        )}
+          </Section>
+        </div>
+
+        <div className="flex min-h-0 flex-col p-4">
+          {!progress ? (
+            <EmptyState title="No generation run yet">
+              {ready ? 'Press “Generate” to create the files. Progress, failures and warnings appear here, and you can cancel safely at any time.' : blocker ? `${blocker} to enable generation.` : 'Complete the checks on the left.'}
+            </EmptyState>
+          ) : (
+            <>
+              <RunSummary />
+              {!running && lastJob && <Completion job={lastJob} />}
+              <JobLog />
+            </>
+          )}
+        </div>
       </div>
+
+      {conflict && (
+        <Dialog
+          title="Some files already exist"
+          width={480}
+          onClose={() => setConflict(null)}
+          footer={
+            <>
+              <Button variant="ghost" onClick={() => setConflict(null)}>
+                Cancel
+              </Button>
+              <Button variant="danger" onClick={() => start({ ...conflict.request, overwrite: 'overwrite' })}>
+                Overwrite {conflict.plan.conflicts}
+              </Button>
+              <Button onClick={() => start({ ...conflict.request, overwrite: 'suffix' })}>Keep both</Button>
+              <Button variant="primary" data-autofocus onClick={() => start({ ...conflict.request, overwrite: 'skip' })}>
+                Skip existing
+              </Button>
+            </>
+          }
+        >
+          <p className="font-medium">
+            {conflict.plan.conflicts} of {conflict.plan.items.length} files already exist in this folder.
+          </p>
+          <ul className="muted mt-1 list-disc pl-5 text-xs">
+            {conflict.plan.items
+              .filter((i) => i.exists)
+              .slice(0, 5)
+              .map((i) => (
+                <li key={i.fileName} className="break-all">
+                  {i.fileName}
+                </li>
+              ))}
+          </ul>
+          <p className="muted mt-2 text-xs">“Keep both” adds a number to new file names. Nothing is overwritten unless you choose Overwrite.</p>
+        </Dialog>
+      )}
+
+      {confirmCancel && progress && (
+        <Dialog
+          title="Stop generating?"
+          onClose={() => setConfirmCancel(false)}
+          footer={
+            <>
+              <Button data-autofocus onClick={() => setConfirmCancel(false)}>
+                Keep going
+              </Button>
+              <Button
+                variant="danger-solid"
+                onClick={() => {
+                  void api.generation.cancel(progress.jobId).catch((e) => toast.push('error', errorMessage(e)))
+                  setConfirmCancel(false)
+                }}
+              >
+                Stop after current card
+              </Button>
+            </>
+          }
+        >
+          <p>The card being created now is finished first. Files already created are kept.</p>
+        </Dialog>
+      )}
     </div>
   )
 }
 
-function Check({ ok, warn = false, label, value, action }: { ok: boolean; warn?: boolean; label: string; value: string; action?: React.ReactNode }) {
+function Check({ tone, label, value, action }: { tone: Tone; label: string; value: string; action?: React.ReactNode }) {
   return (
-    <div className="flex items-center gap-3 px-4 py-3">
-      <StatusDot tone={!ok ? 'error' : warn ? 'warn' : 'ok'} />
+    <li className="flex items-center gap-3 py-2">
+      <StatusDot tone={tone} />
       <div className="min-w-0 flex-1">
         <p className="font-medium">{label}</p>
-        <p className="muted truncate">{value}</p>
+        <p className={`truncate ${tone === 'error' ? 'text-err' : 'muted'}`} title={value}>
+          {value}
+        </p>
       </div>
       {action}
+    </li>
+  )
+}
+
+/** Batch progress: bar, current record, and the three counters that matter. */
+function RunSummary() {
+  const { progress, running } = useGeneration()
+  if (!progress) return null
+  const status = running
+    ? progress.current
+      ? `Working on row ${progress.current.rowNumber}: ${progress.current.fileName}`
+      : 'Opening the template in CorelDRAW…'
+    : progress.status === 'completed'
+      ? 'Finished.'
+      : progress.status === 'cancelled'
+        ? 'Stopped by the operator. Cards created so far are kept.'
+        : `Stopped: ${progress.error ?? 'error'}`
+  return (
+    <div className="mb-3 shrink-0" data-testid="run-summary">
+      <div className="mb-1.5 flex flex-wrap items-baseline gap-x-5 gap-y-1">
+        <p className="text-lg font-semibold tabular-nums">
+          {progress.done} <span className="text-fg-muted">/ {progress.total}</span>
+        </p>
+        <p className="tabular-nums">
+          <span className="font-semibold text-ok">{progress.succeeded}</span> created
+        </p>
+        <p className="tabular-nums">
+          <span className={`font-semibold ${progress.failed ? 'text-err' : ''}`}>{progress.failed}</span> failed
+        </p>
+        <p className="tabular-nums">
+          <span className="font-semibold">{progress.skipped}</span> skipped
+        </p>
+      </div>
+      <Progress value={progress.done} max={progress.total} label="Generation progress" tone={progress.failed ? 'warn' : 'info'} />
+      <p className="mt-1.5 truncate text-xs text-fg-muted" role="status" aria-live="polite">
+        {running && <span className="spinner mr-1.5 align-[-2px]" aria-hidden />}
+        {status}
+      </p>
     </div>
   )
 }
 
 function Completion({ job }: { job: JobSummary }) {
-  const [error, setError] = useState<string | null>(null)
+  const toast = useToast()
   return (
-    <div className="mt-3 space-y-2">
+    <div className="mb-3 shrink-0 space-y-2">
       <Banner
         tone={job.status === 'completed' && job.failed === 0 ? 'ok' : job.status === 'failed' ? 'error' : 'warn'}
         title={`${job.succeeded} editable CDR file(s) created${job.failed ? `, ${job.failed} failed` : ''}${job.skipped ? `, ${job.skipped} skipped` : ''}.`}
@@ -272,16 +325,14 @@ function Completion({ job }: { job: JobSummary }) {
         Review them in CorelDRAW before printing. {job.reportPath && <span className="break-all">Report: {job.reportPath}</span>}
       </Banner>
       <div className="flex flex-wrap gap-2">
-        <button className="btn btn-primary" onClick={() => unwrap(api.generation.openFolder(job.id)).catch((e) => setError(errorMessage(e)))}>
+        <Button variant="primary" onClick={() => unwrap(api.generation.openFolder(job.id)).catch((e) => toast.push('error', errorMessage(e)))}>
+          <Icon name="folder" size={14} />
           Open output folder
-        </button>
+        </Button>
         {job.files.length > 0 && (
-          <button className="btn" onClick={() => unwrap(api.generation.openFile(job.id, 0)).catch((e) => setError(errorMessage(e)))}>
-            Open first card in CorelDRAW
-          </button>
+          <Button onClick={() => unwrap(api.generation.openFile(job.id, 0)).catch((e) => toast.push('error', errorMessage(e)))}>Open first card in CorelDRAW</Button>
         )}
       </div>
-      {error && <p className="text-red-700 dark:text-red-400">{error}</p>}
       <X7Notice version={job.corelVersion} compact />
     </div>
   )
@@ -293,15 +344,18 @@ function JobLog() {
   const shown = [...entries].reverse().filter((e) => !onlyProblems || e.status !== 'ok' || e.overflow.length > 0)
   if (entries.length === 0) return null
   return (
-    <div className="mt-4">
-      <label className="muted mb-2 flex items-center gap-1.5 text-xs">
-        <input type="checkbox" checked={onlyProblems} onChange={(e) => setOnlyProblems(e.target.checked)} /> Only failures and warnings
-      </label>
-      <div className="max-h-72 overflow-y-auto rounded border border-stone-200 dark:border-stone-800">
+    <div className="flex min-h-0 flex-1 flex-col">
+      <div className="mb-1.5 flex items-center gap-3">
+        <h3 className="label">Results</h3>
+        <label className="flex items-center gap-1.5 text-xs text-fg-muted">
+          <input type="checkbox" className="check" checked={onlyProblems} onChange={(e) => setOnlyProblems(e.target.checked)} /> Only failures and warnings
+        </label>
+      </div>
+      <div className="min-h-[8rem] flex-1 overflow-auto rounded border border-line" data-testid="job-log">
         <table className="w-full border-separate border-spacing-0">
           <thead>
             <tr>
-              <th className="table-head w-16">Row</th>
+              <th className="table-head w-14">Row</th>
               <th className="table-head">File</th>
               <th className="table-head w-24">Result</th>
               <th className="table-head">Notes</th>
@@ -320,6 +374,7 @@ function JobLog() {
             ))}
           </tbody>
         </table>
+        {shown.length === 0 && <p className="muted p-4 text-center">No failures or warnings.</p>}
       </div>
     </div>
   )

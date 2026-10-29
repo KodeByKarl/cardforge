@@ -2,47 +2,199 @@
 @tailwind components;
 @tailwind utilities;
 
+/*
+ * CardForge design tokens. Components use the Tailwind names mapped to these variables
+ * (bg-surface, text-fg-muted, border-line, ...) and never raw colors.
+ * Surface hierarchy: canvas (pasteboard) < bg (app) < rail < surface-2 (headers, wells) < surface (content).
+ * Values are space-separated RGB channels so opacity modifiers work.
+ */
+:root {
+  color-scheme: light;
+  --bg: 244 243 240;
+  --surface: 255 255 255;
+  --surface-2: 249 248 246;
+  --rail: 236 235 231;
+  --canvas: 208 206 200;
+  /* Annotation color drawn over white card artwork; identical in both themes because the card is always white. */
+  --overlay: 15 105 92;
+  --hover: 233 231 226;
+  --line: 224 222 216;
+  --line-strong: 190 187 178;
+  --fg: 31 30 27;
+  --fg-muted: 94 91 84;
+  --fg-subtle: 126 123 115;
+  --accent: 15 105 92;
+  --accent-hover: 10 84 73;
+  --accent-fg: 255 255 255;
+  --accent-soft: 224 240 236;
+  --ok: 27 108 60;
+  --ok-soft: 226 241 230;
+  --warn: 138 84 0;
+  --warn-soft: 250 237 208;
+  --err: 176 34 34;
+  --err-soft: 251 227 225;
+}
+
+:root[data-theme='dark'] {
+  color-scheme: dark;
+  --bg: 22 22 20;
+  --surface: 31 31 29;
+  --surface-2: 37 37 34;
+  --rail: 27 27 25;
+  --canvas: 14 14 13;
+  --hover: 50 50 46;
+  --line: 54 54 50;
+  --line-strong: 84 84 77;
+  --fg: 236 234 228;
+  --fg-muted: 166 163 154;
+  --fg-subtle: 130 127 119;
+  --accent: 86 190 166;
+  --accent-hover: 108 206 184;
+  --accent-fg: 8 28 24;
+  --accent-soft: 25 55 48;
+  --ok: 100 192 134;
+  --ok-soft: 25 50 34;
+  --warn: 228 170 62;
+  --warn-soft: 58 44 14;
+  --err: 242 122 116;
+  --err-soft: 66 30 28;
+}
+
 @layer base {
   html,
   body,
   #root {
-    @apply h-full;
+    @apply h-full overflow-hidden;
   }
   body {
-    @apply bg-stone-100 text-stone-900 antialiased dark:bg-stone-950 dark:text-stone-100;
-    font-size: 13.5px;
+    @apply bg-bg font-sans text-sm text-fg antialiased;
+  }
+  h1,
+  h2,
+  h3,
+  h4 {
+    @apply font-semibold;
   }
   :focus-visible {
-    @apply outline-none ring-2 ring-teal-600/60 ring-offset-1 ring-offset-transparent;
+    outline: 2px solid rgb(var(--accent));
+    outline-offset: 1px;
+  }
+  ::selection {
+    background: rgb(var(--accent) / 0.28);
+  }
+  /* Slim scrollbars that follow the theme. */
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: rgb(var(--line-strong)) transparent;
+  }
+  @media (prefers-reduced-motion: reduce) {
+    * {
+      animation-duration: 0.01ms !important;
+      transition-duration: 0.01ms !important;
+    }
   }
 }
 
 @layer components {
+  /* ---- Surfaces ---- */
   .panel {
-    @apply rounded-lg border border-stone-200 bg-white dark:border-stone-800 dark:bg-stone-900;
+    @apply rounded-md border border-line bg-surface;
   }
+  .well {
+    @apply rounded-md border border-line bg-surface-2;
+  }
+
+  /* ---- Buttons: 28px high, one shape; variants only change color ---- */
   .btn {
-    @apply inline-flex h-8 items-center justify-center gap-1.5 whitespace-nowrap rounded-md border border-stone-300 bg-white px-3 font-medium text-stone-800 hover:bg-stone-50 disabled:cursor-not-allowed disabled:opacity-50 dark:border-stone-700 dark:bg-stone-900 dark:text-stone-100 dark:hover:bg-stone-800;
+    @apply inline-flex h-control shrink-0 select-none items-center justify-center gap-1.5 whitespace-nowrap rounded border border-line-strong bg-surface px-3 text-sm font-medium text-fg transition-colors;
+  }
+  .btn:hover:not(:disabled):not([aria-busy='true']) {
+    @apply bg-hover;
+  }
+  .btn:active:not(:disabled) {
+    @apply bg-line;
+  }
+  .btn:disabled,
+  .btn[aria-disabled='true'] {
+    @apply cursor-not-allowed opacity-45;
+  }
+  .btn[aria-busy='true'] {
+    @apply cursor-progress;
   }
   .btn-primary {
-    @apply border-teal-700 bg-teal-700 text-white hover:bg-teal-800 dark:border-teal-500 dark:bg-teal-600 dark:hover:bg-teal-500;
+    @apply border-accent bg-accent text-accent-fg;
+  }
+  .btn-primary:hover:not(:disabled):not([aria-busy='true']) {
+    @apply border-accent-hover bg-accent-hover;
+  }
+  .btn-primary:active:not(:disabled) {
+    @apply bg-accent-hover;
+  }
+  .btn-danger {
+    @apply border-err text-err;
+  }
+  .btn-danger-solid {
+    @apply border-err bg-err text-surface;
+  }
+  .btn-danger-solid:hover:not(:disabled) {
+    @apply opacity-90;
   }
   .btn-ghost {
-    @apply border-transparent bg-transparent hover:bg-stone-200/60 dark:bg-transparent dark:hover:bg-stone-800;
+    @apply border-transparent bg-transparent;
   }
+  .btn-icon {
+    @apply w-control px-0;
+  }
+  .btn-pressed {
+    @apply border-accent bg-accent-soft text-accent;
+  }
+
+  /* ---- Form controls ---- */
   .input {
-    @apply h-8 rounded-md border border-stone-300 bg-white px-2.5 text-stone-900 placeholder:text-stone-400 dark:border-stone-700 dark:bg-stone-900 dark:text-stone-100;
+    @apply h-control rounded border border-line-strong bg-surface px-2 text-sm text-fg placeholder:text-fg-subtle hover:border-fg-subtle;
   }
+  .input:disabled {
+    @apply cursor-not-allowed bg-surface-2 opacity-60;
+  }
+  .input[aria-invalid='true'] {
+    @apply border-err;
+  }
+  .check {
+    @apply h-3.5 w-3.5 cursor-pointer accent-[rgb(var(--accent))];
+  }
+
+  /* ---- Type helpers ---- */
   .muted {
-    @apply text-stone-500 dark:text-stone-400;
+    @apply text-fg-muted;
   }
-  .eyebrow {
-    @apply text-[11px] font-semibold uppercase tracking-wider text-stone-500 dark:text-stone-400;
+  .label {
+    @apply text-2xs font-semibold uppercase tracking-wide text-fg-muted;
   }
+
+  /* ---- Tables: dense, hairline rows, sticky headers ---- */
   .table-head {
-    @apply sticky top-0 z-10 border-b border-stone-200 bg-stone-50 px-3 py-2 text-left text-xs font-semibold text-stone-600 dark:border-stone-800 dark:bg-stone-900 dark:text-stone-300;
+    @apply sticky top-0 z-10 whitespace-nowrap border-b border-line bg-surface-2 px-3 py-1.5 text-left text-xs font-semibold text-fg-muted;
   }
   .table-cell {
-    @apply border-b border-stone-100 px-3 py-1.5 align-top dark:border-stone-800/70;
+    @apply border-b border-line/70 px-3 py-1 align-top;
+  }
+
+  /* ---- Print-production motif: crop marks around the trim edge of a card ---- */
+  .crop {
+    --mark: rgb(var(--fg-muted) / 0.7);
+    padding: 14px;
+    background:
+      linear-gradient(var(--mark), var(--mark)) left 0 top 14px / 9px 1px no-repeat,
+      linear-gradient(var(--mark), var(--mark)) right 0 top 14px / 9px 1px no-repeat,
+      linear-gradient(var(--mark), var(--mark)) left 0 bottom 14px / 9px 1px no-repeat,
+      linear-gradient(var(--mark), var(--mark)) right 0 bottom 14px / 9px 1px no-repeat,
+      linear-gradient(var(--mark), var(--mark)) left 14px top 0 / 1px 9px no-repeat,
+      linear-gradient(var(--mark), var(--mark)) right 14px top 0 / 1px 9px no-repeat,
+      linear-gradient(var(--mark), var(--mark)) left 14px bottom 0 / 1px 9px no-repeat,
+      linear-gradient(var(--mark), var(--mark)) right 14px bottom 0 / 1px 9px no-repeat;
+  }
+
+  .spinner {
+    @apply inline-block h-3.5 w-3.5 animate-spin rounded-full border-2 border-current border-t-transparent opacity-70;
   }
 }

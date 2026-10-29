@@ -84,3 +84,33 @@ export function recordTitle(record: ImportRecord, columns: ColumnConfig[]): stri
   const column = included.find((c) => /\bname\b/i.test(c.label)) ?? included[0]
   return column ? (record.values[column.key] ?? '') : ''
 }
+
+export type PageLayout = 'row' | 'column'
+
+export interface PageSizeMm {
+  widthMm: number
+  heightMm: number
+}
+
+/**
+ * Lays several card pages side by side or stacked, whichever lets the cards be larger in the given box.
+ * Ties go to side by side, which matches how front and back are usually compared.
+ */
+export function chooseLayout(
+  pages: PageSizeMm[],
+  gapMm: number,
+  boxWidthPx: number,
+  boxHeightPx: number,
+  /** Fixed on-screen chrome around each card (crop-mark margin, caption) that does not scale with zoom. */
+  chrome: { x: number; y: number } = { x: 0, y: 0 }
+): { layout: PageLayout; zoom: number } {
+  if (pages.length === 0) return { layout: 'row', zoom: 1 }
+  const gaps = gapMm * (pages.length - 1)
+  const sumW = pages.reduce((s, p) => s + p.widthMm, 0)
+  const sumH = pages.reduce((s, p) => s + p.heightMm, 0)
+  const maxW = Math.max(...pages.map((p) => p.widthMm))
+  const maxH = Math.max(...pages.map((p) => p.heightMm))
+  const row = fitZoom(sumW + gaps, maxH, boxWidthPx - chrome.x * pages.length, boxHeightPx - chrome.y)
+  const column = fitZoom(maxW, sumH + gaps, boxWidthPx - chrome.x, boxHeightPx - chrome.y * pages.length)
+  return column > row ? { layout: 'column', zoom: column } : { layout: 'row', zoom: row }
+}

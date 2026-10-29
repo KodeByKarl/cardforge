@@ -1,8 +1,10 @@
-import { useMemo, useState, type DragEvent } from 'react'
+import { useEffect, useMemo, useRef, useState, type DragEvent, type KeyboardEvent } from 'react'
 import { columnLetter } from '../../../shared/import/headers'
 import type { ColumnConfig, Dataset, FieldKind, ValidationIssue, ValidationResult } from '../../../shared/types'
+import { groupIssues } from '../../../shared/workflow'
 import { api, errorMessage, formatBytes, unwrap } from '../api'
-import { Badge, Banner, PageHeader, Stat } from '../components/ui'
+import { Icon } from '../components/icons'
+import { Badge, Banner, Button, EmptyState, PageHeader, Spinner, Tabs, tabId } from '../components/ui'
 import { useJob } from '../state/job'
 
 const ACCEPTED = ['.xlsx', '.csv']
@@ -33,14 +35,14 @@ export function ImportScreen() {
         description="Load employee records from an .xlsx workbook or .csv file."
         actions={
           state.phase !== 'empty' && (
-            <button className="btn" onClick={pick}>
+            <Button onClick={pick} disabled={state.phase === 'opening' || state.phase === 'reading'}>
               Replace file…
-            </button>
+            </Button>
           )
         }
       />
       {pickError && (
-        <div className="px-6 pt-4">
+        <div className="px-4 pt-3">
           <Banner tone="error" title="Could not open the file picker">
             {pickError}
           </Banner>
@@ -48,20 +50,18 @@ export function ImportScreen() {
       )}
       {state.phase === 'empty' && <DropZone onBrowse={pick} />}
       {(state.phase === 'opening' || state.phase === 'reading') && (
-        <div className="grid flex-1 place-items-center">
-          <p className="muted">{state.phase === 'opening' ? 'Opening workbook…' : `Reading “${state.sheetName}”…`}</p>
+        <div className="grid flex-1 place-items-center" role="status">
+          <p className="muted flex items-center gap-2">
+            <Spinner />
+            {state.phase === 'opening' ? 'Opening workbook…' : `Reading “${state.sheetName}”…`}
+          </p>
         </div>
       )}
       {state.phase === 'error' && (
-        <div className="p-6">
+        <div className="min-h-0 flex-1 overflow-y-auto p-4">
           <Banner tone="error" title="The spreadsheet could not be imported">
             {state.error}
           </Banner>
-          <div className="mt-4 flex gap-2">
-            <button className="btn btn-primary" onClick={pick}>
-              Choose another file…
-            </button>
-          </div>
           <DropZone onBrowse={pick} compact />
         </div>
       )}
@@ -93,30 +93,43 @@ function DropZone({ onBrowse, compact = false }: { onBrowse: () => void; compact
     setRejected(null)
     void openFile(api.excel.pathForFile(file))
   }
+  const onKey = (e: KeyboardEvent) => {
+    if (e.key === 'Enter' || e.key === ' ') {
+      e.preventDefault()
+      onBrowse()
+    }
+  }
 
   return (
-    <div className={compact ? 'mt-6' : 'flex flex-1 p-6'}>
+    <div className={compact ? 'mt-4' : 'flex min-h-0 flex-1 p-4'}>
       <div
+        data-testid="import-drop"
+        role="button"
+        tabIndex={0}
+        aria-label="Choose an Excel or CSV file, or drop one here"
+        onClick={onBrowse}
+        onKeyDown={onKey}
         onDragOver={(e) => {
           e.preventDefault()
           setOver(true)
         }}
         onDragLeave={() => setOver(false)}
         onDrop={onDrop}
-        className={`flex w-full flex-col items-center justify-center rounded-xl border-2 border-dashed px-6 text-center transition-colors ${
-          compact ? 'py-10' : 'flex-1'
-        } ${over ? 'border-teal-600 bg-teal-50 dark:bg-teal-950/40' : 'border-stone-300 dark:border-stone-700'}`}
+        className={`flex w-full cursor-pointer flex-col items-center justify-center rounded-md border border-dashed px-6 text-center transition-colors ${compact ? 'py-8' : 'flex-1'} ${
+          over ? 'border-accent bg-accent-soft' : 'border-line-strong bg-surface hover:bg-surface-2'
+        }`}
       >
-        <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.4" className="text-stone-400" aria-hidden>
-          <path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z" />
-          <path d="M14 3v5h5M9 13h6M9 17h6M12 10v10" />
-        </svg>
-        <p className="mt-3 text-[15px] font-medium">Drop an Excel or CSV file here</p>
-        <p className="muted mt-1">.xlsx or .csv, up to 50 MB</p>
-        <button className="btn btn-primary mt-4" onClick={onBrowse}>
-          Browse…
-        </button>
-        {rejected && <p className="mt-4 max-w-md text-red-700 dark:text-red-400">{rejected}</p>}
+        <Icon name="import" size={28} className="text-fg-muted" />
+        <p className="mt-3 text-base font-semibold">Drop an Excel or CSV file here</p>
+        <p className="muted mt-1">
+          or <span className="text-accent underline">browse for a file</span> · .xlsx or .csv, up to 50 MB
+        </p>
+        <p className="muted mt-4 max-w-md text-xs">One row per employee, with a header row naming each column (for example Full name, Job title, Email, Mobile).</p>
+        {rejected && (
+          <p className="mt-3 max-w-md text-err" role="alert">
+            {rejected}
+          </p>
+        )}
       </div>
     </div>
   )
@@ -127,6 +140,7 @@ type Tab = 'records' | 'columns' | 'issues'
 function ImportWorkspace() {
   const { state, dataset, validation, selectSheet, setHeaderRow } = useJob()
   const [tab, setTab] = useState<Tab>('records')
+  const [focusRow, setFocusRow] = useState<{ row: number; n: number } | null>(null)
   if (!state.workbook || !state.grid || !dataset || !validation) return null
 
   const issueCount = validation.issues.length
@@ -134,20 +148,24 @@ function ImportWorkspace() {
     index: i,
     preview: row.filter((c) => c.trim()).slice(0, 4).join(' · ') || '(blank row)'
   }))
+  const showRow = (row: number) => {
+    setFocusRow({ row, n: Date.now() })
+    setTab('records')
+  }
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
-      <div className="flex flex-wrap items-center gap-x-6 gap-y-3 border-b border-stone-200 px-6 py-3 dark:border-stone-800">
-        <div className="min-w-0">
-          <p className="eyebrow">File</p>
-          <p className="truncate font-medium" title={state.workbook.filePath}>
+      <div className="flex flex-wrap items-end gap-x-5 gap-y-2 border-b border-line bg-surface px-4 py-2">
+        <div className="min-w-0 max-w-[32ch]">
+          <p className="label">File</p>
+          <p className="truncate font-medium leading-7" title={state.workbook.filePath}>
             {state.workbook.fileName} <span className="muted font-normal">· {formatBytes(state.workbook.sizeBytes)}</span>
           </p>
         </div>
         {state.workbook.format === 'xlsx' && (
           <label>
-            <span className="eyebrow block">Worksheet</span>
-            <select className="input mt-0.5" value={state.sheetName ?? ''} onChange={(e) => void selectSheet(e.target.value)}>
+            <span className="label block">Worksheet</span>
+            <select className="input max-w-[26ch]" value={state.sheetName ?? ''} onChange={(e) => void selectSheet(e.target.value)}>
               {state.workbook.sheets.map((s) => (
                 <option key={s.name} value={s.name}>
                   {s.name} ({s.rowCount} rows)
@@ -156,9 +174,9 @@ function ImportWorkspace() {
             </select>
           </label>
         )}
-        <label>
-          <span className="eyebrow block">Header row</span>
-          <select className="input mt-0.5 max-w-xs" value={state.headerRowIndex} onChange={(e) => setHeaderRow(Number(e.target.value))}>
+        <label className="min-w-0">
+          <span className="label block">Header row</span>
+          <select className="input max-w-[34ch]" value={state.headerRowIndex} onChange={(e) => setHeaderRow(Number(e.target.value))}>
             {headerOptions.map((o) => (
               <option key={o.index} value={o.index}>
                 Row {o.index + 1}: {o.preview.slice(0, 60)}
@@ -166,73 +184,92 @@ function ImportWorkspace() {
             ))}
           </select>
         </label>
+        <SummaryStrip validation={validation} dataset={dataset} onIssues={() => setTab('issues')} />
       </div>
 
-      <div className="flex flex-wrap gap-x-8 gap-y-3 px-6 py-4">
-        <Stat label="Records" value={validation.totalRecords} />
-        <Stat label="Ready" value={validation.validRecords - validation.recordsWithWarnings} tone="ok" />
-        <Stat label="Warnings" value={validation.recordsWithWarnings} tone={validation.recordsWithWarnings ? 'warn' : 'neutral'} />
-        <Stat label="Errors" value={validation.recordsWithErrors} tone={validation.recordsWithErrors ? 'error' : 'neutral'} />
-        <Stat label="Duplicate groups" value={validation.duplicateGroups} tone={validation.duplicateGroups ? 'warn' : 'neutral'} />
-        <Stat label="Blank rows skipped" value={dataset.skippedEmptyRows.length} />
+      {(state.truncated || validation.issues.some((i) => i.rowNumber === undefined)) && (
+        <div className="space-y-1.5 px-4 pt-2">
+          {state.truncated && (
+            <Banner tone="warn" title="This sheet was cut off">
+              Only the first 20,000 rows and 200 columns were imported. Split the file into smaller batches.
+            </Banner>
+          )}
+          {validation.issues
+            .filter((i) => i.rowNumber === undefined)
+            .map((i) => (
+              <Banner key={i.code} tone="error" title={i.message} />
+            ))}
+        </div>
+      )}
+
+      <div className="mt-2">
+        <Tabs
+          idPrefix="import"
+          label="Import views"
+          value={tab}
+          onChange={setTab}
+          tabs={[
+            { key: 'records', label: 'Records' },
+            { key: 'columns', label: <>Columns <span className="muted">{dataset.columns.filter((c) => c.include).length}/{dataset.columns.length}</span></> },
+            {
+              key: 'issues',
+              label: (
+                <>
+                  Issues {issueCount > 0 && <Badge tone={validation.recordsWithErrors ? 'error' : 'warn'}>{issueCount}</Badge>}
+                </>
+              )
+            }
+          ]}
+        />
       </div>
 
-      <div className="space-y-2 px-6 empty:hidden">
-        {state.truncated && (
-          <Banner tone="warn" title="This sheet was cut off">
-            Only the first 20,000 rows and 200 columns were imported. Split the file into smaller batches.
-          </Banner>
-        )}
-        {validation.issues
-          .filter((i) => i.rowNumber === undefined)
-          .map((i) => (
-            <Banner key={i.code} tone="error" title={i.message} />
-          ))}
-      </div>
-
-      <div className="mt-2 flex gap-1 border-b border-stone-200 px-6 dark:border-stone-800" role="tablist">
-        <TabButton active={tab === 'records'} onClick={() => setTab('records')}>
-          Records
-        </TabButton>
-        <TabButton active={tab === 'columns'} onClick={() => setTab('columns')}>
-          Columns <span className="muted">{dataset.columns.filter((c) => c.include).length}/{dataset.columns.length}</span>
-        </TabButton>
-        <TabButton active={tab === 'issues'} onClick={() => setTab('issues')}>
-          Issues {issueCount > 0 && <Badge tone={validation.recordsWithErrors ? 'error' : 'warn'}>{issueCount}</Badge>}
-        </TabButton>
-      </div>
-
-      <div className="min-h-0 flex-1 overflow-hidden">
-        {tab === 'records' && <RecordsTable dataset={dataset} validation={validation} />}
+      <div role="tabpanel" id={tabId('import', tab, 'panel')} aria-labelledby={tabId('import', tab, 'tab')} className="min-h-0 flex-1 overflow-hidden bg-surface">
+        {tab === 'records' && <RecordsTable dataset={dataset} validation={validation} focusRow={focusRow} />}
         {tab === 'columns' && <ColumnsTable dataset={dataset} />}
-        {tab === 'issues' && <IssuesList dataset={dataset} validation={validation} />}
+        {tab === 'issues' && <IssuesList dataset={dataset} validation={validation} onShowRow={showRow} />}
       </div>
     </div>
   )
 }
 
-function TabButton({ active, onClick, children }: { active: boolean; onClick: () => void; children: React.ReactNode }) {
+/** One-line validation summary; the counts that need action are buttons that jump to the issue list. */
+function SummaryStrip({ validation, dataset, onIssues }: { validation: ValidationResult; dataset: Dataset; onIssues: () => void }) {
+  const ready = validation.validRecords - validation.recordsWithWarnings
+  const Count = ({ n, label, tone, action }: { n: number; label: string; tone: string; action?: boolean }) => {
+    const body = (
+      <>
+        <span className={`font-semibold tabular-nums ${n > 0 ? tone : 'text-fg'}`}>{n}</span> <span className="text-fg-muted">{label}</span>
+      </>
+    )
+    return action && n > 0 ? (
+      <button type="button" className="rounded px-1 underline decoration-dotted underline-offset-2 hover:bg-hover" onClick={onIssues}>
+        {body}
+      </button>
+    ) : (
+      <span className="px-1">{body}</span>
+    )
+  }
   return (
-    <button
-      role="tab"
-      aria-selected={active}
-      onClick={onClick}
-      className={`-mb-px flex h-9 items-center gap-1.5 border-b-2 px-3 ${
-        active ? 'border-teal-700 font-medium dark:border-teal-400' : 'border-transparent text-stone-600 hover:text-stone-900 dark:text-stone-400 dark:hover:text-stone-100'
-      }`}
-    >
-      {children}
-    </button>
+    <p className="ml-auto flex flex-wrap items-center gap-x-1 pb-1 leading-7" aria-label="Validation summary">
+      <Count n={validation.totalRecords} label={validation.totalRecords === 1 ? 'record' : 'records'} tone="" />
+      <Count n={ready} label="ready" tone="text-ok" />
+      <Count n={validation.recordsWithWarnings} label={validation.recordsWithWarnings === 1 ? 'warning' : 'warnings'} tone="text-warn" action />
+      <Count n={validation.recordsWithErrors} label={validation.recordsWithErrors === 1 ? 'error' : 'errors'} tone="text-err" action />
+      {validation.duplicateGroups > 0 && <Count n={validation.duplicateGroups} label={validation.duplicateGroups === 1 ? 'duplicate group' : 'duplicate groups'} tone="text-warn" action />}
+      {dataset.skippedEmptyRows.length > 0 && <Count n={dataset.skippedEmptyRows.length} label="blank rows skipped" tone="" />}
+    </p>
   )
 }
 
 type RecordFilter = 'all' | 'issues' | 'errors' | 'warnings'
 const PAGE_SIZE = 100
 
-function RecordsTable({ dataset, validation }: { dataset: Dataset; validation: ValidationResult }) {
+function RecordsTable({ dataset, validation, focusRow }: { dataset: Dataset; validation: ValidationResult; focusRow: { row: number; n: number } | null }) {
   const [query, setQuery] = useState('')
   const [filter, setFilter] = useState<RecordFilter>('all')
   const [page, setPage] = useState(0)
+  const [flash, setFlash] = useState<number | null>(null)
+  const scroller = useRef<HTMLDivElement>(null)
   const columns = dataset.columns.filter((c) => c.include)
 
   const rows = useMemo(() => {
@@ -246,25 +283,49 @@ function RecordsTable({ dataset, validation }: { dataset: Dataset; validation: V
     })
   }, [dataset, validation, query, filter])
 
+  // "Show row" from the issue list: clear filters, open the page that holds the row, then scroll to and flash it.
+  useEffect(() => {
+    if (!focusRow) return
+    setQuery('')
+    setFilter('all')
+    const index = dataset.records.findIndex((r) => r.rowNumber === focusRow.row)
+    if (index < 0) return
+    setPage(Math.floor(index / PAGE_SIZE))
+    setFlash(focusRow.row)
+    const t = setTimeout(() => {
+      scroller.current?.querySelector(`[data-row="${focusRow.row}"]`)?.scrollIntoView({ block: 'center' })
+    }, 30)
+    const off = setTimeout(() => setFlash(null), 2500)
+    return () => {
+      clearTimeout(t)
+      clearTimeout(off)
+    }
+  }, [focusRow, dataset.records])
+
   const pageCount = Math.max(1, Math.ceil(rows.length / PAGE_SIZE))
   const current = Math.min(page, pageCount - 1)
   const visible = rows.slice(current * PAGE_SIZE, (current + 1) * PAGE_SIZE)
 
   return (
     <div className="flex h-full flex-col">
-      <div className="flex flex-wrap items-center gap-2 px-6 py-3">
-        <input
-          className="input w-72"
-          type="search"
-          placeholder="Search name, email, any value…"
-          value={query}
-          onChange={(e) => {
-            setQuery(e.target.value)
-            setPage(0)
-          }}
-        />
+      <div className="flex flex-wrap items-center gap-2 border-b border-line px-4 py-2">
+        <div className="relative">
+          <Icon name="search" size={14} className="pointer-events-none absolute left-2 top-1.5 text-fg-subtle" />
+          <input
+            className="input w-64 pl-7"
+            type="search"
+            aria-label="Search records"
+            placeholder="Search name, email, any value…"
+            value={query}
+            onChange={(e) => {
+              setQuery(e.target.value)
+              setPage(0)
+            }}
+          />
+        </div>
         <select
           className="input"
+          aria-label="Filter records"
           value={filter}
           onChange={(e) => {
             setFilter(e.target.value as RecordFilter)
@@ -280,16 +341,23 @@ function RecordsTable({ dataset, validation }: { dataset: Dataset; validation: V
           {rows.length} of {dataset.records.length}
         </span>
       </div>
-      <div className="min-h-0 flex-1 overflow-auto px-6">
+      <div ref={scroller} className="min-h-0 flex-1 overflow-auto">
         <table className="w-full border-separate border-spacing-0">
           <thead>
             <tr>
-              <th className="table-head w-14">Row</th>
-              <th className="table-head w-8" aria-label="Status" />
+              <th className="table-head sticky left-0 z-20 w-14">Row</th>
+              <th className="table-head w-10">
+                <span className="sr-only">Issues</span>
+              </th>
               {columns.map((c) => (
-                <th key={c.key} className="table-head whitespace-nowrap">
+                <th key={c.key} className="table-head">
                   {c.label}
-                  {c.required && <span className="text-red-600"> *</span>}
+                  {c.required && (
+                    <span className="text-err" title="Required">
+                      {' '}
+                      *
+                    </span>
+                  )}
                 </th>
               ))}
             </tr>
@@ -298,22 +366,19 @@ function RecordsTable({ dataset, validation }: { dataset: Dataset; validation: V
             {visible.map((record) => {
               const issues = validation.byRow.get(record.rowNumber) ?? []
               const hasError = issues.some((i) => i.severity === 'error')
+              const flashing = flash === record.rowNumber
               return (
-                <tr key={record.rowNumber} className="hover:bg-stone-50 dark:hover:bg-stone-900">
-                  <td className="table-cell muted tabular-nums">{record.rowNumber}</td>
+                <tr key={record.rowNumber} data-row={record.rowNumber} className={`group ${flashing ? 'bg-accent-soft' : 'hover:bg-surface-2'}`}>
+                  <td className={`table-cell sticky left-0 tabular-nums text-fg-muted ${flashing ? 'bg-accent-soft' : 'bg-surface group-hover:bg-surface-2'}`}>{record.rowNumber}</td>
                   <td className="table-cell" title={issues.map((i) => i.message).join('\n')}>
                     {issues.length > 0 && <Badge tone={hasError ? 'error' : 'warn'}>{issues.length}</Badge>}
                   </td>
                   {columns.map((c) => {
                     const cellIssues = issues.filter((i) => i.columnKey === c.key)
-                    const tone = cellIssues.some((i) => i.severity === 'error')
-                      ? 'bg-red-50 dark:bg-red-950/50'
-                      : cellIssues.length
-                        ? 'bg-amber-50 dark:bg-amber-950/40'
-                        : ''
+                    const tone = cellIssues.some((i) => i.severity === 'error') ? 'bg-err-soft' : cellIssues.length ? 'bg-warn-soft' : ''
                     return (
                       <td key={c.key} className={`table-cell ${c.kind === 'multiline' ? 'min-w-48 whitespace-pre-line' : 'whitespace-nowrap'} ${tone}`} title={cellIssues.map((i) => i.message).join('\n') || undefined}>
-                        {record.values[c.key] || (c.required ? <span className="italic text-red-700 dark:text-red-400">missing</span> : '')}
+                        {record.values[c.key] || (c.required ? <span className="italic text-err">missing</span> : '')}
                       </td>
                     )
                   })}
@@ -322,19 +387,19 @@ function RecordsTable({ dataset, validation }: { dataset: Dataset; validation: V
             })}
           </tbody>
         </table>
-        {visible.length === 0 && <p className="muted py-10 text-center">No records match.</p>}
+        {visible.length === 0 && <EmptyState title="No records match">Change the search or filter to see more rows.</EmptyState>}
       </div>
       {pageCount > 1 && (
-        <div className="flex items-center justify-end gap-2 border-t border-stone-200 px-6 py-2 dark:border-stone-800">
-          <button className="btn" disabled={current === 0} onClick={() => setPage(current - 1)}>
+        <div className="flex items-center justify-end gap-2 border-t border-line bg-surface-2 px-4 py-1.5">
+          <Button disabled={current === 0} onClick={() => setPage(current - 1)}>
             Previous
-          </button>
+          </Button>
           <span className="muted tabular-nums">
             Page {current + 1} of {pageCount}
           </span>
-          <button className="btn" disabled={current >= pageCount - 1} onClick={() => setPage(current + 1)}>
+          <Button disabled={current >= pageCount - 1} onClick={() => setPage(current + 1)}>
             Next
-          </button>
+          </Button>
         </div>
       )}
     </div>
@@ -362,10 +427,8 @@ function ColumnsTable({ dataset }: { dataset: Dataset }) {
   const emptyCount = (c: ColumnConfig) => dataset.records.filter((r) => !r.values[c.key]).length
 
   return (
-    <div className="h-full overflow-auto px-6 py-3">
-      <p className="muted mb-3 max-w-3xl">
-        Choose which columns to import and how each is checked. These columns are matched to the template’s text objects in Template setup.
-      </p>
+    <div className="h-full overflow-auto">
+      <p className="muted max-w-3xl px-4 py-2">Choose which columns to import and how each is checked. Included columns are matched to the template’s text objects in Template setup.</p>
       <table className="w-full border-separate border-spacing-0">
         <thead>
           <tr>
@@ -385,13 +448,13 @@ function ColumnsTable({ dataset }: { dataset: Dataset }) {
           {dataset.columns.map((c) => (
             <tr key={c.key} className={c.include ? '' : 'opacity-60'}>
               <td className="table-cell">
-                <input type="checkbox" aria-label={`Include ${c.label}`} checked={c.include} onChange={(e) => updateColumn(c.key, { include: e.target.checked })} />
+                <input type="checkbox" className="check" aria-label={`Include ${c.label}`} checked={c.include} onChange={(e) => updateColumn(c.key, { include: e.target.checked })} />
               </td>
-              <td className="table-cell muted font-mono text-xs">{columnLetter(c.index)}</td>
+              <td className="table-cell font-mono text-xs text-fg-muted">{columnLetter(c.index)}</td>
               <td className="table-cell font-medium">{c.label}</td>
-              <td className="table-cell muted max-w-xs truncate">{sample(c)}</td>
+              <td className="table-cell max-w-xs truncate text-fg-muted">{sample(c)}</td>
               <td className="table-cell">
-                <select className="input h-7 w-full" disabled={!c.include} value={c.kind} onChange={(e) => updateColumn(c.key, { kind: e.target.value as FieldKind })}>
+                <select className="input h-6 w-full" aria-label={`${c.label} type`} disabled={!c.include} value={c.kind} onChange={(e) => updateColumn(c.key, { kind: e.target.value as FieldKind })}>
                   {(Object.keys(KIND_LABELS) as FieldKind[]).map((k) => (
                     <option key={k} value={k}>
                       {KIND_LABELS[k]}
@@ -400,16 +463,10 @@ function ColumnsTable({ dataset }: { dataset: Dataset }) {
                 </select>
               </td>
               <td className="table-cell">
-                <input type="checkbox" aria-label={`${c.label} required`} disabled={!c.include} checked={c.required} onChange={(e) => updateColumn(c.key, { required: e.target.checked })} />
+                <input type="checkbox" className="check" aria-label={`${c.label} required`} disabled={!c.include} checked={c.required} onChange={(e) => updateColumn(c.key, { required: e.target.checked })} />
               </td>
               <td className="table-cell">
-                <input
-                  type="checkbox"
-                  aria-label={`${c.label} is part of duplicate key`}
-                  disabled={!c.include}
-                  checked={c.duplicateKey}
-                  onChange={(e) => updateColumn(c.key, { duplicateKey: e.target.checked })}
-                />
+                <input type="checkbox" className="check" aria-label={`${c.label} is part of duplicate key`} disabled={!c.include} checked={c.duplicateKey} onChange={(e) => updateColumn(c.key, { duplicateKey: e.target.checked })} />
               </td>
               <td className="table-cell text-right tabular-nums">{c.include ? emptyCount(c) : '–'}</td>
             </tr>
@@ -420,49 +477,62 @@ function ColumnsTable({ dataset }: { dataset: Dataset }) {
   )
 }
 
-function IssuesList({ dataset, validation }: { dataset: Dataset; validation: ValidationResult }) {
-  const [severity, setSeverity] = useState<'all' | 'error' | 'warning'>('all')
-  const labels = new Map(dataset.columns.map((c) => [c.key, c.label]))
-  const issues = validation.issues.filter((i) => severity === 'all' || i.severity === severity)
+const GROUP_PAGE = 200
 
+/** Issues grouped by severity, errors first; each issue can jump to its row in the Records tab. */
+function IssuesList({ dataset, validation, onShowRow }: { dataset: Dataset; validation: ValidationResult; onShowRow: (row: number) => void }) {
+  const labels = new Map(dataset.columns.map((c) => [c.key, c.label]))
+  const groups = groupIssues(validation.issues)
+  const [shown, setShown] = useState<Record<string, number>>({})
+
+  if (groups.length === 0) {
+    return (
+      <EmptyState title="No issues found">
+        <Badge tone="ok">All {validation.totalRecords} records passed validation</Badge>
+      </EmptyState>
+    )
+  }
   return (
-    <div className="flex h-full flex-col">
-      <div className="flex items-center gap-2 px-6 py-3">
-        <select className="input" value={severity} onChange={(e) => setSeverity(e.target.value as typeof severity)}>
-          <option value="all">All issues</option>
-          <option value="error">Errors only</option>
-          <option value="warning">Warnings only</option>
-        </select>
-        <p className="muted">Errors block a record from generation. Warnings should be reviewed but do not block it.</p>
-      </div>
-      <div className="min-h-0 flex-1 overflow-auto px-6 pb-4">
-        {issues.length === 0 ? (
-          <p className="muted py-10 text-center">No issues found.</p>
-        ) : (
-          <table className="w-full border-separate border-spacing-0">
-            <thead>
-              <tr>
-                <th className="table-head w-24">Severity</th>
-                <th className="table-head w-16">Row</th>
-                <th className="table-head w-48">Column</th>
-                <th className="table-head">Problem</th>
-              </tr>
-            </thead>
-            <tbody>
-              {issues.map((issue: ValidationIssue, i) => (
-                <tr key={i}>
-                  <td className="table-cell">
-                    <Badge tone={issue.severity === 'error' ? 'error' : 'warn'}>{issue.severity}</Badge>
-                  </td>
-                  <td className="table-cell tabular-nums">{issue.rowNumber ?? '–'}</td>
-                  <td className="table-cell">{issue.columnKey ? labels.get(issue.columnKey) : '–'}</td>
-                  <td className="table-cell">{issue.message}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        )}
-      </div>
+    <div className="h-full overflow-auto pb-4">
+      {groups.map((g) => {
+        const limit = shown[g.severity] ?? GROUP_PAGE
+        return (
+          <section key={g.severity} aria-labelledby={`issues-${g.severity}`}>
+            <div className="sticky top-0 z-10 flex items-center gap-3 border-b border-line bg-surface-2 px-4 py-1.5">
+              <h3 id={`issues-${g.severity}`} className="flex items-center gap-2 text-sm">
+                <Badge tone={g.severity === 'error' ? 'error' : 'warn'}>{g.severity === 'error' ? 'Errors' : 'Warnings'}</Badge>
+                <span className="tabular-nums">{g.items.length}</span>
+              </h3>
+              <p className="muted text-xs">{g.severity === 'error' ? 'These records are excluded from generation until fixed in the spreadsheet.' : 'Review these; they do not block generation.'}</p>
+            </div>
+            <table className="w-full border-separate border-spacing-0">
+              <tbody>
+                {g.items.slice(0, limit).map((issue: ValidationIssue, i) => (
+                  <tr key={i} className="hover:bg-surface-2">
+                    <td className="table-cell w-20 tabular-nums text-fg-muted">{issue.rowNumber !== undefined ? `Row ${issue.rowNumber}` : 'Sheet'}</td>
+                    <td className="table-cell w-44 text-fg-muted">{issue.columnKey ? labels.get(issue.columnKey) : '–'}</td>
+                    <td className="table-cell">{issue.message}</td>
+                    <td className="table-cell w-24 text-right">
+                      {issue.rowNumber !== undefined && (
+                        <button type="button" className="text-accent underline-offset-2 hover:underline" onClick={() => onShowRow(issue.rowNumber!)} aria-label={`Show row ${issue.rowNumber} in Records`}>
+                          Show row
+                        </button>
+                      )}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+            {g.items.length > limit && (
+              <div className="px-4 py-2">
+                <Button onClick={() => setShown({ ...shown, [g.severity]: limit + GROUP_PAGE })}>
+                  Show {Math.min(GROUP_PAGE, g.items.length - limit)} more ({g.items.length - limit} hidden)
+                </Button>
+              </div>
+            )}
+          </section>
+        )
+      })}
     </div>
   )
 }
