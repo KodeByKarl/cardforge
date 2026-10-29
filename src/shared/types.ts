@@ -95,6 +95,8 @@ export interface AppSettings {
   /** Tokens: {row}, {col:<Header Label>}. Sanitised before use. */
   fileNamePattern: string
   exportPdf: boolean
+  /** Distance from the card edge that text should stay inside; used for overflow warnings. */
+  safeMarginMm: number
 }
 
 export interface CorelDetection {

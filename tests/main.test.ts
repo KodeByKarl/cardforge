@@ -2,7 +2,6 @@ import { existsSync, mkdirSync, readFileSync, rmSync } from 'node:fs'
 import { join, resolve } from 'node:path'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { assertSafePath, sanitizeFileName } from '../src/main/paths'
-import { MockCorelAdapter } from '../src/main/services/corel/MockCorelAdapter'
 import { serverExecutable } from '../src/main/services/corel/detect'
 import { DEFAULT_SETTINGS, SettingsStore, sanitizeSettingsPatch } from '../src/main/settings'
 
@@ -53,36 +52,5 @@ describe('CorelDRAW detection', () => {
       'c:\\Program Files\\Corel\\CorelDRAW Graphics Suite X7\\Programs64\\CorelDRW.exe'
     )
     expect(serverExecutable('C:\\Corel\\CorelDRW.exe /Automation')).toBe('C:\\Corel\\CorelDRW.exe')
-  })
-})
-
-describe('mock CorelDRAW adapter', () => {
-  const template = {
-    templatePath: 'C:\\t.cdr',
-    pageCount: 1,
-    pageWidthMm: 90,
-    pageHeightMm: 50,
-    textObjects: [{ name: 'FullName', pageIndex: 1, currentText: 'Name', bounds: null, fontName: null, fontSizePt: null, isParagraphText: null }]
-  }
-
-  it('never writes .cdr files and refuses to overwrite', async () => {
-    const adapter = new MockCorelAdapter(template)
-    await adapter.beginBatch(template.templatePath)
-    const out = join(TMP, 'card1.cdr')
-    await adapter.generateOne({ values: { FullName: 'Ana' }, outputPath: out })
-    expect(existsSync(out)).toBe(false)
-    expect(existsSync(`${out}.mock.json`)).toBe(true)
-    await expect(adapter.generateOne({ values: { FullName: 'Ana' }, outputPath: out })).rejects.toThrow()
-    await adapter.endBatch()
-  })
-
-  it('reports unknown template objects and simulated failures', async () => {
-    const adapter = new MockCorelAdapter(template)
-    await expect(adapter.generateOne({ values: {}, outputPath: join(TMP, 'x.cdr') })).rejects.toMatchObject({ code: 'NO_BATCH' })
-    await adapter.beginBatch(template.templatePath)
-    await expect(adapter.beginBatch(template.templatePath)).rejects.toMatchObject({ code: 'BATCH_IN_PROGRESS' })
-    await expect(adapter.generateOne({ values: { Title: 'x' }, outputPath: join(TMP, 'y.cdr') })).rejects.toMatchObject({ code: 'SHAPE_NOT_FOUND' })
-    adapter.failOn = () => true
-    await expect(adapter.generateOne({ values: { FullName: 'x' }, outputPath: join(TMP, 'z.cdr') })).rejects.toMatchObject({ code: 'COREL_SAVE_FAILED' })
   })
 })

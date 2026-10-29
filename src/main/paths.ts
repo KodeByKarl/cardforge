@@ -39,18 +39,5 @@ export async function assertReadableFile(path: string, maxBytes: number): Promis
   return info.size
 }
 
-const RESERVED_NAMES = /^(con|prn|aux|nul|com[1-9]|lpt[1-9])$/i
-
-/** Produces a Windows-safe file name stem (no extension) from arbitrary record text. */
-export function sanitizeFileName(input: string, fallback = 'card'): string {
-  let name = input
-    .normalize('NFC')
-    .replace(/[<>:"/\\|?*\u0000-\u001F]/g, '_')
-    .replace(/\s+/g, ' ')
-    .trim()
-    .replace(/[. ]+$/, '')
-  if (name.length > 120) name = name.slice(0, 120).trim()
-  if (name.length === 0) name = fallback
-  if (RESERVED_NAMES.test(name)) name = `_${name}`
-  return name
-}
+// Kept here for existing callers; the implementation is shared with the renderer.
+export { sanitizeFileName } from '../shared/generation/naming'

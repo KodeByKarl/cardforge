@@ -1,44 +1,102 @@
 import { writeFile } from 'node:fs/promises'
+import { join } from 'node:path'
+import type { ApplyResult, ExportedPage, ShapeValues, TemplateInspection } from '../../../shared/template/types'
 import { AppError } from '../../errors'
-import type { CorelAdapter, GenerateItem, TemplateInfo } from './CorelAdapter'
+import type { CorelAdapter, CorelConnection, DocHandle } from './CorelAdapter'
+
+// Smallest valid PNG (1x1 transparent pixel).
+const TINY_PNG = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=', 'base64')
+
+export const MOCK_CDR_CONTENT = 'MOCK CDR - written by MockCorelAdapter, not a CorelDRAW file'
 
 /**
- * DEVELOPMENT/TEST ONLY. Simulates CorelDRAW so the workflow can be built without the application.
- * It writes JSON files with a ".mock.json" suffix — never .cdr — so its output can't be mistaken for real output.
+ * TEST ONLY — never wired into the running app. Simulates CorelDRAW in memory so services can be tested
+ * without CorelDRAW. Overflow is simulated as "value longer than maxChars".
  */
 export class MockCorelAdapter implements CorelAdapter {
   readonly kind = 'mock' as const
-  private batchTemplate: string | null = null
-  failOn: ((item: GenerateItem) => boolean) | null = null
+  readonly calls: string[] = []
+  readonly open = new Map<DocHandle, { path: string; values: ShapeValues }>()
+  failOn: ((op: string, detail: string) => AppError | null) | null = null
+  maxChars = 30
+  private next = 1
 
-  constructor(private readonly template: TemplateInfo) {}
+  constructor(private readonly inspection: TemplateInspection) {}
 
-  async connect(): Promise<void> {}
-
-  async inspectTemplate(templatePath: string): Promise<TemplateInfo> {
-    return { ...this.template, templatePath }
+  private check(op: string, detail = ''): void {
+    this.calls.push(op)
+    const err = this.failOn?.(op, detail)
+    if (err) throw err
   }
 
-  async beginBatch(templatePath: string): Promise<void> {
-    if (this.batchTemplate) throw new AppError('BATCH_IN_PROGRESS', 'A batch is already running.')
-    this.batchTemplate = templatePath
+  private doc(handle: DocHandle) {
+    const d = this.open.get(handle)
+    if (!d) throw new AppError('UNKNOWN_DOCUMENT', `Unknown document handle '${handle}'.`)
+    return d
   }
 
-  async generateOne(item: GenerateItem): Promise<void> {
-    if (!this.batchTemplate) throw new AppError('NO_BATCH', 'beginBatch must be called first.')
-    if (this.failOn?.(item)) throw new AppError('COREL_SAVE_FAILED', 'Simulated CorelDRAW failure.')
-    const known = new Set(this.template.textObjects.map((o) => o.name))
-    const unknown = Object.keys(item.values).filter((name) => !known.has(name))
-    if (unknown.length > 0) throw new AppError('SHAPE_NOT_FOUND', `Template has no text object named ${unknown.join(', ')}.`)
-    const body = { mock: true, template: this.batchTemplate, values: item.values }
-    await writeFile(`${item.outputPath}.mock.json`, JSON.stringify(body, null, 2), { encoding: 'utf8', flag: 'wx' })
+  async connect(): Promise<CorelConnection> {
+    this.check('connect')
+    return { version: 'Mock 0.0', progId: 'CorelDRAW.Application.Mock' }
   }
 
-  async endBatch(): Promise<void> {
-    this.batchTemplate = null
+  async openDocument(path: string): Promise<DocHandle> {
+    this.check('openDocument', path)
+    const handle = `m${this.next++}`
+    this.open.set(handle, { path, values: {} })
+    return handle
+  }
+
+  async closeDocument(handle: DocHandle): Promise<void> {
+    this.check('closeDocument')
+    this.open.delete(handle)
+  }
+
+  async inspect(handle: DocHandle): Promise<TemplateInspection> {
+    this.check('inspect')
+    this.doc(handle)
+    return structuredClone(this.inspection)
+  }
+
+  async applyText(handle: DocHandle, values: ShapeValues): Promise<ApplyResult> {
+    this.check('applyText', JSON.stringify(values))
+    const doc = this.doc(handle)
+    const result: ApplyResult = { objects: [], notFound: [] }
+    for (const [name, value] of Object.entries(values)) {
+      const obj = this.inspection.objects.find((o) => o.name === name)
+      if (!obj) {
+        result.notFound.push(name)
+        continue
+      }
+      doc.values[name] = value
+      const overflow = value.length > this.maxChars
+      result.objects.push({ name, pageIndex: obj.pageIndex, overflow, reason: overflow ? 'Mock overflow' : null, bounds: obj.bounds })
+    }
+    return result
+  }
+
+  async exportPages(handle: DocHandle, options: { dir: string; prefix: string; dpi: number; pages: number[] }): Promise<ExportedPage[]> {
+    this.check('exportPages')
+    this.doc(handle)
+    const files: ExportedPage[] = []
+    for (const pageIndex of options.pages) {
+      const page = this.inspection.pages.find((p) => p.index === pageIndex)
+      if (!page) throw new AppError('INVALID_ARGS', `Page ${pageIndex} does not exist.`)
+      const path = join(options.dir, `${options.prefix}-p${pageIndex}.png`)
+      await writeFile(path, TINY_PNG)
+      files.push({ pageIndex, path, widthPx: Math.round((page.widthMm / 25.4) * options.dpi), heightPx: Math.round((page.heightMm / 25.4) * options.dpi) })
+    }
+    return files
+  }
+
+  async saveAs(handle: DocHandle, path: string): Promise<void> {
+    this.check('saveAs', path)
+    const doc = this.doc(handle)
+    await writeFile(path, `${MOCK_CDR_CONTENT}\n${JSON.stringify(doc.values)}`, 'utf8')
+    doc.path = path
   }
 
   async dispose(): Promise<void> {
-    this.batchTemplate = null
+    this.open.clear()
   }
 }

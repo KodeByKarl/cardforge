@@ -1,14 +1,28 @@
-import { BrowserWindow, dialog, ipcMain, shell, type IpcMainInvokeEvent } from 'electron'
-import { app } from 'electron'
+import { BrowserWindow, app, dialog, ipcMain, shell, type IpcMainInvokeEvent } from 'electron'
 import { IPC } from '../shared/ipc'
 import type { IpcResult } from '../shared/types'
 import { AppError } from './errors'
 import { getLogDirectory, log } from './logger'
+import type { CorelService } from './services/corel/CorelService'
 import { detectCorelDraw } from './services/corel/detect'
 import { openWorkbook, readSheet } from './services/excel/excelReader'
+import type { GenerationService } from './services/generation/GenerationService'
+import type { JobHistory } from './services/generation/JobHistory'
+import type { PreviewService } from './services/preview/PreviewService'
+import type { TemplateStore } from './services/templates/TemplateStore'
 import type { SettingsStore } from './settings'
+import { parseId } from './validation'
 
 type Handler = (event: IpcMainInvokeEvent, ...args: unknown[]) => Promise<unknown>
+
+export interface Services {
+  settings: SettingsStore
+  corel: CorelService
+  templates: TemplateStore
+  preview: PreviewService
+  generation: GenerationService
+  history: JobHistory
+}
 
 /** Only frames loaded from our own bundle (or the dev server) may call IPC. */
 function isTrustedSender(event: IpcMainInvokeEvent): boolean {
@@ -36,20 +50,25 @@ function handle(channel: string, handler: Handler): void {
   })
 }
 
-export function registerIpc(settings: SettingsStore): void {
+async function pickPath(event: IpcMainInvokeEvent, options: Electron.OpenDialogOptions): Promise<string | null> {
+  const win = BrowserWindow.fromWebContents(event.sender)
+  const result = win ? await dialog.showOpenDialog(win, options) : await dialog.showOpenDialog(options)
+  return result.canceled ? null : (result.filePaths[0] ?? null)
+}
+
+async function openPath(path: string): Promise<void> {
+  const error = await shell.openPath(path)
+  if (error) throw new AppError('OPEN_FAILED', error)
+}
+
+export function registerIpc(services: Services): void {
+  const { settings, corel, templates, preview, generation, history } = services
   // readSheet only accepts files the user explicitly opened in this session.
   const openedSpreadsheets = new Set<string>()
 
-  handle(IPC.excelPickFile, async (event) => {
-    const win = BrowserWindow.fromWebContents(event.sender)
-    const options: Electron.OpenDialogOptions = {
-      title: 'Select employee spreadsheet',
-      properties: ['openFile'],
-      filters: [{ name: 'Spreadsheets', extensions: ['xlsx', 'csv'] }]
-    }
-    const result = win ? await dialog.showOpenDialog(win, options) : await dialog.showOpenDialog(options)
-    return result.canceled ? null : (result.filePaths[0] ?? null)
-  })
+  handle(IPC.excelPickFile, (event) =>
+    pickPath(event, { title: 'Select employee spreadsheet', properties: ['openFile'], filters: [{ name: 'Spreadsheets', extensions: ['xlsx', 'csv'] }] })
+  )
 
   handle(IPC.excelOpen, async (_event, filePath) => {
     const info = await openWorkbook(filePath)
@@ -69,23 +88,60 @@ export function registerIpc(settings: SettingsStore): void {
 
   handle(IPC.settingsGet, async () => settings.get())
   handle(IPC.settingsUpdate, async (_event, patch) => settings.update(patch))
-
   handle(IPC.settingsPickOutputDir, async (event) => {
-    const win = BrowserWindow.fromWebContents(event.sender)
-    const options: Electron.OpenDialogOptions = {
-      title: 'Select default output folder',
-      properties: ['openDirectory', 'createDirectory']
-    }
-    const result = win ? await dialog.showOpenDialog(win, options) : await dialog.showOpenDialog(options)
-    if (result.canceled || !result.filePaths[0]) return null
-    await settings.update({ outputDirectory: result.filePaths[0] })
-    return result.filePaths[0]
+    const dir = await pickPath(event, { title: 'Select default output folder', properties: ['openDirectory', 'createDirectory'] })
+    if (dir) await settings.update({ outputDirectory: dir })
+    return dir
   })
 
   handle(IPC.corelDetect, async () => {
     const detection = await detectCorelDraw()
     log.info('corel.detect', { ...detection })
     return detection
+  })
+  handle(IPC.corelStatus, () => corel.status())
+
+  handle(IPC.templatesList, () => templates.list())
+  handle(IPC.templatesGet, (_event, id) => templates.get(parseId(id)))
+  handle(IPC.templatesPickAndImport, async (event) => {
+    const path = await pickPath(event, { title: 'Select CorelDRAW template', properties: ['openFile'], filters: [{ name: 'CorelDRAW', extensions: ['cdr'] }] })
+    return path ? templates.import(path) : null
+  })
+  handle(IPC.templatesImport, (_event, path) => templates.import(path))
+  handle(IPC.templatesReinspect, async (_event, id) => {
+    const record = await templates.reinspect(parseId(id))
+    await preview.invalidate(record.id, await corel.getAdapter())
+    return record
+  })
+  handle(IPC.templatesRemove, async (_event, id) => {
+    await preview.invalidate(parseId(id))
+    await templates.remove(parseId(id))
+  })
+  handle(IPC.templatesRename, (_event, id, name) => templates.rename(parseId(id), name))
+  handle(IPC.templatesSaveMapping, (_event, id, mapping) => templates.saveMapping(parseId(id), mapping))
+  handle(IPC.templatesSourceStatus, (_event, id) => templates.sourceStatus(parseId(id)))
+  handle(IPC.templatesPageImages, (_event, id) => templates.pageImages(parseId(id)))
+
+  handle(IPC.previewRender, (_event, request) => preview.render(request))
+
+  handle(IPC.generationPickOutputDir, (event) =>
+    pickPath(event, { title: 'Select output folder', properties: ['openDirectory', 'createDirectory'], defaultPath: settings.get().outputDirectory ?? undefined })
+  )
+  handle(IPC.generationPlan, (_event, request) => generation.plan(request))
+  handle(IPC.generationStart, (_event, request) => generation.start(request))
+  handle(IPC.generationCancel, async (_event, jobId) => generation.cancel(jobId))
+  handle(IPC.generationHistory, () => history.list())
+  // Only folders/files recorded by a finished job can be opened — never arbitrary paths from the renderer.
+  handle(IPC.generationOpenFolder, async (_event, jobId) => {
+    const job = await history.get(parseId(jobId, 'job id'))
+    if (!job) throw new AppError('JOB_NOT_FOUND', 'That job is not in the history.')
+    await openPath(job.outputDirectory)
+  })
+  handle(IPC.generationOpenFile, async (_event, jobId, index) => {
+    const job = await history.get(parseId(jobId, 'job id'))
+    const file = typeof index === 'number' && Number.isInteger(index) ? job?.files[index] : undefined
+    if (!file) throw new AppError('FILE_NOT_FOUND', 'That generated file is not in the job history.')
+    await openPath(file)
   })
 
   handle(IPC.appInfo, async () => ({
@@ -97,11 +153,9 @@ export function registerIpc(settings: SettingsStore): void {
     userDataPath: app.getPath('userData'),
     logDirectory: getLogDirectory() ?? ''
   }))
-
   handle(IPC.appOpenLogs, async () => {
     const dir = getLogDirectory()
     if (!dir) throw new AppError('NO_LOGS', 'Logging is not initialised.')
-    const error = await shell.openPath(dir)
-    if (error) throw new AppError('OPEN_FAILED', error)
+    await openPath(dir)
   })
 }

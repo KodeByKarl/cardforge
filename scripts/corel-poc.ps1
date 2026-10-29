@@ -122,6 +122,9 @@ try {
     Step 'Create test template' {
       $script:Template = Join-Path $OutputDir "poc-template-$stamp.cdr"
       $d = $app.CreateDocument()
+      # Always close the document this step created, even if a later call fails (otherwise it stays
+      # open, unsaved and invisible, inside the automation instance of CorelDRAW).
+      try {
       $d.Unit = $cdrMillimeter
       $d.ActivePage.SetSize(90, 50)
       $name = $d.ActiveLayer.CreateArtisticText(8, 30, 'Employee Name')
@@ -142,7 +145,10 @@ try {
       $group = $range.Group()
       $group.Name = 'ContactGroup'
       Save-Cdr $d $script:Template $SaveAsVersion
-      $d.Close()
+      } finally {
+        $d.Dirty = $false
+        $d.Close()
+      }
       "saved $($script:Template)"
     }
   }

@@ -8,7 +8,8 @@ export const DEFAULT_SETTINGS: AppSettings = {
   outputDirectory: null,
   overwritePolicy: 'ask',
   fileNamePattern: '{row} - {col:Full Name}',
-  exportPdf: false
+  exportPdf: false,
+  safeMarginMm: 3
 }
 
 const OVERWRITE_POLICIES: readonly OverwritePolicy[] = ['ask', 'skip', 'suffix']
@@ -41,6 +42,11 @@ export function sanitizeSettingsPatch(input: unknown): Partial<AppSettings> {
   if ('exportPdf' in raw) {
     if (typeof raw.exportPdf !== 'boolean') throw new AppError('INVALID_SETTINGS', 'exportPdf must be true or false.')
     patch.exportPdf = raw.exportPdf
+  }
+  if ('safeMarginMm' in raw) {
+    const v = raw.safeMarginMm
+    if (typeof v !== 'number' || !Number.isFinite(v) || v < 0 || v > 10) throw new AppError('INVALID_SETTINGS', 'Safety margin must be 0–10 mm.')
+    patch.safeMarginMm = v
   }
   return patch
 }

@@ -1,3 +1,16 @@
+import type {
+  CorelStatus,
+  GenerationPlan,
+  GenerationRequest,
+  JobProgress,
+  JobSummary,
+  PreviewRequest,
+  PreviewResult,
+  SavedMapping,
+  TemplateRecord,
+  TemplateSourceStatus,
+  TemplateSummary
+} from './template/types'
 import type { AppInfo, AppSettings, CorelDetection, IpcResult, SheetData, WorkbookInfo } from './types'
 
 /** Every IPC channel the renderer may invoke. The main process registers exactly these. */
@@ -9,8 +22,32 @@ export const IPC = {
   settingsUpdate: 'settings:update',
   settingsPickOutputDir: 'settings:pickOutputDir',
   corelDetect: 'corel:detect',
+  corelStatus: 'corel:status',
+  templatesList: 'templates:list',
+  templatesGet: 'templates:get',
+  templatesPickAndImport: 'templates:pickAndImport',
+  templatesImport: 'templates:import',
+  templatesReinspect: 'templates:reinspect',
+  templatesRemove: 'templates:remove',
+  templatesRename: 'templates:rename',
+  templatesSaveMapping: 'templates:saveMapping',
+  templatesSourceStatus: 'templates:sourceStatus',
+  templatesPageImages: 'templates:pageImages',
+  previewRender: 'preview:render',
+  generationPickOutputDir: 'generation:pickOutputDir',
+  generationPlan: 'generation:plan',
+  generationStart: 'generation:start',
+  generationCancel: 'generation:cancel',
+  generationHistory: 'generation:history',
+  generationOpenFolder: 'generation:openFolder',
+  generationOpenFile: 'generation:openFile',
   appInfo: 'app:info',
   appOpenLogs: 'app:openLogs'
+} as const
+
+/** Main → renderer push events. */
+export const IPC_EVENTS = {
+  generationProgress: 'generation:progress'
 } as const
 
 /** API exposed on window.cardforge by the preload script. */
@@ -29,6 +66,33 @@ export interface CardForgeApi {
   }
   corel: {
     detect(): Promise<IpcResult<CorelDetection>>
+    status(): Promise<IpcResult<CorelStatus>>
+  }
+  templates: {
+    list(): Promise<IpcResult<TemplateSummary[]>>
+    get(id: string): Promise<IpcResult<TemplateRecord>>
+    pickAndImport(): Promise<IpcResult<TemplateRecord | null>>
+    import(path: string): Promise<IpcResult<TemplateRecord>>
+    reinspect(id: string): Promise<IpcResult<TemplateRecord>>
+    remove(id: string): Promise<IpcResult<void>>
+    rename(id: string, name: string): Promise<IpcResult<TemplateRecord>>
+    saveMapping(id: string, mapping: SavedMapping): Promise<IpcResult<TemplateRecord>>
+    sourceStatus(id: string): Promise<IpcResult<TemplateSourceStatus>>
+    pageImages(id: string): Promise<IpcResult<{ pageIndex: number; dataUrl: string }[]>>
+  }
+  preview: {
+    render(request: PreviewRequest): Promise<IpcResult<PreviewResult>>
+  }
+  generation: {
+    pickOutputDirectory(): Promise<IpcResult<string | null>>
+    plan(request: GenerationRequest): Promise<IpcResult<GenerationPlan>>
+    start(request: GenerationRequest): Promise<IpcResult<{ jobId: string }>>
+    cancel(jobId: string): Promise<IpcResult<boolean>>
+    history(): Promise<IpcResult<JobSummary[]>>
+    openFolder(jobId: string): Promise<IpcResult<void>>
+    openFile(jobId: string, index: number): Promise<IpcResult<void>>
+    /** Subscribes to progress events; returns an unsubscribe function. */
+    onProgress(listener: (progress: JobProgress) => void): () => void
   }
   app: {
     info(): Promise<IpcResult<AppInfo>>
