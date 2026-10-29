@@ -27,6 +27,7 @@ async function test(name, fn) {
     if (shots) await app.screenshot(join(shots, `FAIL-${name.replace(/\W+/g, '_')}.png`)).catch(() => {})
   }
 }
+const snap = async (n) => shots && app.screenshot(join(shots, `state-${n}@${scale}.png`))
 const nav = (key) => app.click(`[data-testid=nav-${key}]`)
 const text = () => app.eval('document.body.innerText')
 const q = (sel, fn = 'e => e') => app.eval(`(() => { const e = document.querySelector(${JSON.stringify(sel)}); return e ? (${fn})(e) : null })()`)
@@ -186,6 +187,7 @@ await test('mapping workflow: auto-match maps objects, status updates and saves'
 await test('dialog accessibility: Remove opens a modal that traps focus, closes on Esc and restores focus', async () => {
   await app.clickText('Remove…')
   await sleep(200)
+  await snap('dialog-remove')
   assert(await q('[role=dialog]', 'e => e.getAttribute("aria-modal") === "true"'), 'aria-modal')
   assert(await q('[role=dialog]', 'e => !!document.getElementById(e.getAttribute("aria-labelledby"))'), 'labelled by its title')
   assert(await app.eval("document.querySelector('[role=dialog]').contains(document.activeElement)"), 'focus moved into dialog')
@@ -200,6 +202,7 @@ await test('dialog accessibility: Remove opens a modal that traps focus, closes 
   await app.key('Escape')
   assert(!(await q('[role=dialog]', 'e => true')), 'Esc closes')
   assert((await app.eval('document.activeElement.textContent')).includes('Remove'), 'focus returned to the opener')
+  await snap('after-dialog')
 })
 
 await test('preview: single view renders both pages through CorelDRAW with the right aspect ratio', async () => {
@@ -268,6 +271,7 @@ await test('preview: grid view shows a contact sheet, opens a record, and tile s
   await app.waitFor("document.querySelectorAll('[data-testid=preview-grid] img').length >= 2", 90000, 'thumbnails render')
   const tile = await app.eval("(() => { const r = document.querySelector('[data-testid=preview-grid] li div').getBoundingClientRect(); return r.width / r.height })()")
   assert(Math.abs(tile - 90 / 50) < 0.03, `thumbnail aspect ratio ${tile}`)
+  await snap('preview-grid')
   await app.eval("document.querySelector('[role=radio][data-value=large]').click()")
   await sleep(200)
   await app.eval("document.querySelectorAll('[data-testid=preview-grid] button')[2].click()")
@@ -306,7 +310,9 @@ await test('generation: output folder, progress, completion summary and files on
   assert(/Generate \d+ cards? to CorelDRAW/.test(label), `button label: ${label}`)
   await app.click('[data-testid=generate-button]')
   await app.waitFor("!!document.querySelector('[role=progressbar]')", 20000, 'progress bar')
+  await snap('generate-running')
   await app.waitFor("document.body.innerText.includes('Open output folder')", 240000, 'completion summary')
+  await snap('generate-complete')
   const files = readdirSync(outDir).filter((f) => f.endsWith('.cdr'))
   assert(files.length > 0, 'CDR files written')
   assert(/\d+ editable CDR file/.test(await text()), 'completion banner')
@@ -328,6 +334,7 @@ await test('generation: cancel asks for confirmation (dialog) and stops safely',
   await sleep(250)
   assert(await q('[role=dialog]', 'e => true'), 'confirmation dialog')
   assert((await app.eval('document.activeElement.textContent')).includes('Keep going'), 'safe default focus')
+  await snap('dialog-cancel')
   await app.clickText('Stop after current card')
   await app.waitFor("document.body.innerText.includes('Open output folder') || document.body.innerText.includes('Stopped')", 120000, 'job stopped or finished')
 })
@@ -340,6 +347,7 @@ await test('existing-file conflict dialog appears for the ask policy', async () 
   await app.click('[data-testid=generate-button]')
   await app.waitFor("!!document.querySelector('[role=dialog]')", 15000, 'conflict dialog')
   assert((await q('[role=dialog] h2', 'e => e.textContent')).includes('already exist'), 'conflict title')
+  await snap('dialog-conflict')
   assert((await app.eval('document.activeElement.textContent')).includes('Skip existing'), 'safest option focused')
   await app.key('Escape')
   assert(!(await q('[role=dialog]', 'e => true')), 'Esc dismisses without starting')

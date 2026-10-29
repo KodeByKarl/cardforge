@@ -87,11 +87,13 @@ export function SettingsScreen() {
     <div className="flex h-full flex-col">
       <PageHeader title="Settings" />
       <div className="min-h-0 flex-1 overflow-y-auto">
-        <div className="max-w-3xl space-y-7 p-4">
+        <div className="grid items-start gap-x-10 gap-y-6 p-4 wide:grid-cols-2">
           {error && (
-            <Banner tone="error" title="Settings error">
-              {error}
-            </Banner>
+            <div className="wide:col-span-2">
+              <Banner tone="error" title="Settings error">
+                {error}
+              </Banner>
+            </div>
           )}
 
           <Group title="Appearance">
@@ -227,11 +229,11 @@ function Group({ title, children }: { title: string; children: ReactNode }) {
   )
 }
 
-/** Label column + control column; stacks on narrow windows. */
+/** Label above its control; groups sit in two columns on wide windows so the workspace is used. */
 function Row({ label, hint, htmlFor, children }: { label: string; hint?: string; htmlFor?: string; children: ReactNode }) {
   return (
-    <div className="grid gap-x-6 gap-y-1 py-2.5 wide:grid-cols-[180px_minmax(0,1fr)]">
-      <label htmlFor={htmlFor} className="pt-1 font-medium">
+    <div className="py-2.5">
+      <label htmlFor={htmlFor} className="mb-1 block font-medium">
         {label}
       </label>
       <div className="min-w-0">

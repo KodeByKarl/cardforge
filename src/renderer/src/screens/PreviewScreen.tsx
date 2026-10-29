@@ -358,7 +358,7 @@ function SingleView({
                   <div className="crop">
                     <div className="relative bg-white shadow-card" style={{ width: size.width, height: size.height }} data-testid="card-frame">
                       {img ? (
-                        <img src={img.dataUrl} alt={`${pageLabel(p.index, allPages.length)} for row ${record.rowNumber}`} className={`h-full w-full object-contain transition-opacity ${loading ? 'opacity-50' : ''}`} draggable={false} />
+                        <img src={img.dataUrl} alt={`${pageLabel(p.index, allPages.length)} for row ${record.rowNumber}`} className={`h-full w-full object-fill transition-opacity ${loading ? 'opacity-50' : ''}`} draggable={false} />
                       ) : (
                         !error && (
                           <span className="absolute inset-0 grid place-items-center text-xs text-fg-subtle">
@@ -564,7 +564,7 @@ function GridView({
                 <button type="button" onClick={() => onOpen(pg.start + i)} aria-label={`Open ${name || `row ${r.rowNumber}`}`} className="w-full rounded border border-line bg-surface p-2 text-left hover:border-accent">
                   <div className="relative w-full bg-white shadow-card" style={{ aspectRatio: `${pageInfo.widthMm} / ${pageInfo.heightMm}` }}>
                     {thumb?.dataUrl ? (
-                      <img src={thumb.dataUrl} alt="" className="h-full w-full object-contain" draggable={false} />
+                      <img src={thumb.dataUrl} alt="" className="h-full w-full object-fill" draggable={false} />
                     ) : (
                       <span className="absolute inset-0 grid place-items-center text-xs text-fg-subtle">{thumb?.error ? 'Render failed' : <Spinner label="Rendering" />}</span>
                     )}

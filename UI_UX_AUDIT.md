@@ -34,19 +34,49 @@ Components (`components/ui.tsx`): Button (loading), IconButton, Tooltip, Badge, 
 
 Dashboard, Excel import (grouped issues with "Show row", sticky row column, one-line validation summary), Template setup (mapped/unmapped/missing status, Required/Optional per field, auto-match), Card preview (zoom, fit, 100 %, record navigation, search, grid with tile sizes, details panel, shortcuts `← → Home End + − 0 1 / G I`, Ctrl+wheel zoom), Generate (readiness checks, output, progress, counters, log, cancel and overwrite dialogs), Settings (theme, CorelDRAW, output, diagnostics with copy).
 
-## Verification
+## Final verification (2026-10-29)
 
-- `npm run typecheck`: clean.
-- `npx vitest run`: 8 files, 101 tests pass (adds `tests/workflow.test.ts`).
-- `npm run test:e2e` (`tests/e2e/run.mjs`, real Electron + real CorelDRAW 27): navigation and shortcuts, empty/error states, import workflow, tab keyboard support, template inspect, mapping, dialog focus trap, preview zoom/navigation/grid/inspector, theme, settings, real batch generation, cancel dialog, overwrite dialog, then a layout probe (document overflow, controls outside the window, clipped button labels, overlapping toolbar controls) on all six screens at 800×480, 910×512, 1024×768, 1093×614, 1280×720, 1366×768, 1440×900, 1920×1080, 2560×1440 in light and dark.
-  - Last complete run: 35/41, the 6 failures being two test-script bugs and the Settings overflow (#10/#11), all fixed afterwards.
-  - After those fixes the non-CorelDRAW subset (layout at all sizes/themes, navigation, import, keyboard, theme, settings) passed 29/30; the one failure is the dialog test, which needs a template and therefore CorelDRAW.
-- `tests/e2e/real-resize.mjs` resizes the real window with Win32 and confirms the layout follows (4 sizes, all matched). The e2e suite itself emulates viewport sizes (Electron does not support `Browser.setWindowBounds`), so it must not be left running when judging resizing by hand.
+Environment: Windows 11, Electron 33.2.1 (Chromium 130), CorelDRAW 27.2 (not X7). A stale test-launched CorelDRAW instance (PID 19072, `/Automation -Embedding`, started by an interrupted run; the operator confirmed no unsaved work) was terminated; only that PID. A new empty automation instance (PID 1796) was activated by COM afterwards and was left alone.
 
-## Not verified / limitations
+### Exact results
 
-- A full e2e re-run **after** the last two fixes could not complete: a stale CorelDRAW process left by an interrupted run blocked template inspection. The CorelDRAW-dependent tests (template, mapping, dialog, preview, generation) need a re-run once CorelDRAW is closed: `npm run build && npm run test:e2e`.
-- The two-pane Template layout from 1024 px was added after the last screenshots of that screen; it has not been re-inspected visually.
-- Windows scaling 125 %/150 %: the suite supports `E2E_SCALE=1.25` (Chromium `--force-device-scale-factor`) but it was not run; equivalent CSS-pixel sizes (1093×614, 910×512) were. Real Windows display settings were not changed.
-- CorelDRAW integration tests (`npm run test:corel`) and the production build were not re-run for this change set beyond `npm run build`.
-- Everything was tested on CorelDRAW 27, not X7.
+| Check | Result |
+|---|---|
+| `npm run typecheck` | clean |
+| `npm run build` | success |
+| `npx vitest run` | 8 files, **101/101** passed |
+| `npm run test:corel` (real CorelDRAW integration) | 2 files, **9/9** passed |
+| `npm run test:e2e` at 100 % scaling | **41/41** passed |
+| `E2E_SCALE=1.25 npm run test:e2e` | **41/41** passed |
+| `E2E_SCALE=1.5 npm run test:e2e` | **41/41** passed |
+| `tests/e2e/real-resize.mjs` (real window, Win32 resize, 4 sizes) | all matched |
+| Renderer console errors during e2e | none |
+
+The e2e suite covers: navigation and shortcuts, empty/error/loading states, import (reject, corrupt file, records, grouped issues, Show row, tab keyboard, search), template inspection, mapping and persistence, dialog focus trap/Esc/focus return, preview (render, aspect ratio, zoom/fit/100 %, record keys, search, details panel resize, grid, tile size), theme, settings labelling, real batch generation (files verified on disk), cancel dialog, overwrite dialog, and the layout probe below. Nothing was skipped or disabled.
+
+Layout probe (document overflow, controls outside the window, clipped button labels, overlapping toolbar controls, Fit overflowing its canvas, unusably small cards) runs on all six screens, light and dark, at 800×480, 910×512, 1024×768, 1093×614, 1280×720, 1366×768, 1440×900, 1920×1080 and 2560×1440, at each of the three scaling factors (the 100/125/150 % runs were all green).
+
+### Screenshots inspected (by eye)
+
+Template setup 1024×768 light and 800×480 light; Card preview 1366×768 dark and 2560×1440 dark (scale 100 %); preview grid; Excel import 1366×768 light and 1024×768 dark; Dashboard 1366×768 light; Generate 1366×768 dark, generate-complete state, overwrite dialog; Settings 1280×720 light, 1920×1080 dark at 150 %; Generate 800×480 dark at 125 %. Other combinations were covered by the automated probe, not inspected individually.
+
+### Issues found in this round and fixed
+
+1. Stale CorelDRAW process made template inspection time out (environment, resolved by terminating the confirmed test-only PID).
+2. Settings left the right half of the window empty at 1280 px and wider (constrained `max-w-3xl`): now two columns on wide windows, labels above controls.
+3. 1 px light line at the right edge of rendered cards (frame size rounded versus image aspect): images now `object-fill` in single and grid views.
+4. Earlier in the redesign: implicit grid row and `sr-only` elements inflating document height (see table above), Template two-pane below 1280 px.
+
+### Remaining limitations (unverified)
+
+- **CorelDRAW X7 compatibility is unverified.** Everything was run on CorelDRAW 27 only.
+- Windows scaling was applied through Chromium's device scale factor (`--force-device-scale-factor`), not by changing Windows display settings. Viewport sizes are emulated in the suite; the real-resize script covers true window resizing at four sizes.
+- Tab order and screen-reader output were checked through automated roles, labels and focus assertions, not with a screen reader or full manual Tab-through.
+- Contrast was judged visually in both themes; no automated contrast audit was run.
+- Very large datasets (20,000 rows) were not re-tested visually; the table and issue lists are paged/capped (100 records per page, 200 issues per group).
+- Unit tests cover only the pure workflow/layout logic; React components are covered by e2e, not component tests.
+- Not started, by instruction: PDF export (the setting is still labelled "not built yet") and the Windows installer.
+
+## Production readiness
+
+The UI is stable and verified for the tested configuration (Windows 11, CorelDRAW 27) with no known open UI defects. It is **not** declared production-ready for the client until X7 compatibility is validated on the client's computer and PDF export and the installer are built and tested.

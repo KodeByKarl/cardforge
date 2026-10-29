@@ -6,3 +6,9 @@ release/
 .DS_Store
 tests/.tmp/
 *.tsbuildinfo
+
+# Confidential client assets and private data: never commit
+clients/
+private/
+*.private.*
+/tests/.private/
