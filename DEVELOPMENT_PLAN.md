@@ -1,46 +1,36 @@
 # Development Plan
 
-## Phase 1 — Technical feasibility ✅ (except client-side X7 verification)
-- [x] Inspect environment (Node 26, npm 11, Windows 11; CorelDRAW v27 present, X7 absent)
-- [x] Architecture defined (ARCHITECTURE.md)
-- [x] Excel parsing proof of concept → became the production import module
-- [x] CorelDRAW text-replacement PoC (`scripts/corel-poc.ps1`): **PASS on v27.2**
-- [x] Integration risks documented (CORELDRAW_INTEGRATION.md)
-- [ ] **Run PoC on client's X7 machine** ← gate for Phase 5
+## Phase 1 — Technical feasibility ✅ (X7 run pending, client-side)
+PoC script passes on CorelDRAW v27.2. Integration risks documented.
 
 ## Phase 2 — Application foundation ✅
-- [x] Electron + React + TypeScript (strict) + Vite + Tailwind
-- [x] Secure IPC with typed contract, sender + argument validation
-- [x] App shell, navigation, Dashboard, Settings (CorelDRAW detection, output folder, overwrite policy, naming pattern)
-- [x] Structured logging, error boundaries
-- [x] Vitest infrastructure
 
 ## Phase 3 — Excel processing ✅
-- [x] Drag-and-drop + picker, worksheet selection, header detection
-- [x] Column setup, normalisation, validation, duplicates, searchable table, issues list
 
-## Phase 4 — Template and preview (next, prioritised)
-1. `corel-bridge.ps1` persistent worker + `PowerShellCorelAdapter` (inspect + export commands only first)
-2. Template selection screen; list named text objects; map columns → objects; save mapping per template
-3. Background export (mapped text emptied) + overlay preview; single + grid view, zoom, navigation, search
-4. "Render in CorelDRAW" verification for chosen records; overflow measurement via CorelDRAW
-5. Tests: bridge protocol (with a fake bridge process), mapping logic, preview geometry
+## Phase 4 — Template setup and preview ✅ (verified on v27; X7 pending)
+- [x] Probe of the real CorelDRAW object model: type-library constants and members (CORELDRAW_INTEGRATION.md §3)
+- [x] Persistent PowerShell COM bridge + `BridgeProcess` client (timeouts, crash restart, generations)
+- [x] Template library: import by picker/drop, copy + hash, CorelDRAW inspection, thumbnails, re-inspect, remove, changed-original detection
+- [x] Mapping editor with auto-match, keep/blank, object outlines on the page image, autosave, issues
+- [x] CorelDRAW-rendered preview: single + grid, front/back, zoom/fit/actual size, search, navigation, missing/overflow panel
+- [x] Front/back test fixture built by CorelDRAW (`scripts/make-test-template.ps1`)
+- [x] Unit tests (mapping, navigation, bridge client, services) and integration tests on real CorelDRAW
 
-## Phase 5 — CorelDRAW generation
-1. `beginBatch / generateOne / endBatch` in the bridge; template copied to temp, opened once per batch
-2. Job runner in main: queue, single active job lock, per-record timeout, cancel between records, crash restart
-3. Output naming from pattern, overwrite policy, output summary, open folder / open in CorelDRAW
-4. Job history on the Dashboard
-5. Benchmark 100 / 500 records **on client PC**
+## Phase 5 — CorelDRAW generation ✅ on v27 (X7-specific behaviour pending validation)
+- [x] Job runner: plan, conflicts (ask/skip/suffix/overwrite), one job at a time, cancel, per-record errors, crash recovery
+- [x] Undo-based reset between records (fixes font drift after CJK text)
+- [x] Deferred rename (CorelDRAW locks the last-saved file)
+- [x] Report JSON, job history, dashboard, open folder / open file
+- [ ] Benchmark 100 / 500 records **on the client PC with X7**
 
-## Phase 6 — Testing and packaging
-- Integration tests against real CorelDRAW (gated, run on a machine with CorelDRAW)
-- End-to-end UI tests (CDP-driven like the Phase 3 verification)
-- X7 compatibility test pass on the client PC
-- NSIS installer build, install/uninstall test on a clean Windows VM
-- User guide with screenshots
+## Phase 6 — Testing and packaging (next)
+1. **Client:** X7 validation procedure (CORELDRAW_INTEGRATION.md §8). This gates everything below.
+2. Fix any X7 differences found; re-run `npm run test:corel` on X7.
+3. Build the NSIS installer; install/uninstall test on a clean Windows VM (PowerShell execution, bridge outside asar).
+4. User guide with screenshots; operator checklist (close CorelDRAW dialogs, fonts installed).
+5. Optional: PDF export, imposition (needs print specs), template rename UI.
 
-## Order of the next three actions
-1. Client: run `corel-poc.ps1` on X7 and send template + spreadsheet (REQUIREMENTS.md, "Missing client assets").
-2. Dev: build the bridge's `inspectTemplate` against the client's real template.
-3. Dev: Template setup screen + mapping.
+## Next three actions
+1. Client runs the X7 validation and sends the real template + spreadsheet.
+2. Address X7 findings.
+3. Installer build and clean-machine test.

@@ -167,3 +167,9 @@ export function parseSavedMapping(input: unknown): SavedMapping {
   }
   return { version: 1, entries }
 }
+
+/** Object names in reading order: by page, then top to bottom, then left to right (CorelDRAW lists them by stacking order). */
+export function objectNamesByPosition(objects: TemplateObject[]): string[] {
+  const sorted = [...objects].sort((a, b) => a.pageIndex - b.pageIndex || b.bounds.top - a.bounds.top || a.bounds.left - b.bounds.left)
+  return objectNames(sorted)
+}

@@ -77,3 +77,10 @@ export function gridPage(total: number, page: number, pageSize: number): GridPag
 export function pageOfIndex(index: number, pageSize: number): number {
   return Math.floor(Math.max(0, index) / pageSize)
 }
+
+/** The text that identifies a record to people: the first included "name" column, else the first included column. */
+export function recordTitle(record: ImportRecord, columns: ColumnConfig[]): string {
+  const included = columns.filter((c) => c.include)
+  const column = included.find((c) => /\bname\b/i.test(c.label)) ?? included[0]
+  return column ? (record.values[column.key] ?? '') : ''
+}

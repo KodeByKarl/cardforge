@@ -16,6 +16,7 @@ export function SettingsScreen() {
   const [scanning, setScanning] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [pattern, setPattern] = useState('')
+  const [margin, setMargin] = useState('')
 
   const scan = useCallback(async () => {
     setScanning(true)
@@ -33,6 +34,7 @@ export function SettingsScreen() {
       ([s, i]) => {
         setSettings(s)
         setPattern(s.fileNamePattern)
+        setMargin(String(s.safeMarginMm))
         setInfo(i)
       },
       (err) => setError(errorMessage(err))
@@ -110,13 +112,31 @@ export function SettingsScreen() {
               onBlur={() => pattern !== settings?.fileNamePattern && update({ fileNamePattern: pattern })}
             />
           </Field>
+          <Field label="Safety margin" hint="Text closer than this to the card edge is flagged as possible overflow in previews and generation reports.">
+            <div className="flex items-center gap-2">
+              <input
+                className="input w-24"
+                type="number"
+                min={0}
+                max={10}
+                step={0.5}
+                value={margin}
+                onChange={(e) => setMargin(e.target.value)}
+                onBlur={() => {
+                  const v = Number(margin)
+                  if (Number.isFinite(v) && v !== settings?.safeMarginMm) void update({ safeMarginMm: v })
+                }}
+              />
+              <span className="muted">mm</span>
+            </div>
+          </Field>
           <Field label="Export preferences">
             <label className="flex items-center gap-1.5">
               <input type="checkbox" checked={settings?.exportPdf ?? false} onChange={(e) => update({ exportPdf: e.target.checked })} />
               Also export a PDF next to each CDR <Badge>Optional · not built yet</Badge>
             </label>
           </Field>
-          <p className="muted text-xs">These settings are used by CDR generation (Phase 5).</p>
+          <p className="muted text-xs">Generated files are editable CDR in CorelDRAW X7 (v17) format.</p>
         </Section>
 
         <Section title="Application">

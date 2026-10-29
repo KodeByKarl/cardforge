@@ -1,43 +1,82 @@
 # Test Report
 
-Last run: 2026-10-29 · Windows 11 · Node 26.13 (tests) · Electron 33.2.1 (app)
+Last run: 2026-10-29 · Windows 11 · Node 26.13 (tests) · Electron 33.2.1 (app) · **CorelDRAW v27.2.0.135**
 
-## Automated — `npm test` (Vitest): 42 passed, 0 failed
+> All CorelDRAW results below are from **v27.2**. **CorelDRAW X7 has not been tested.** These results do not
+> establish production readiness; that requires the X7 procedure in CORELDRAW_INTEGRATION.md §8.
 
-| Suite | Tests | Covers |
+## Summary
+
+| Suite | Command | Result |
 |---|---|---|
-| `tests/import.test.ts` | 26 | CSV (quotes, escaped quotes, embedded newlines, CRLF, BOM, `;`/tab delimiters, trailing empties); normalisation (whitespace, invisible chars, NFC, email, phone); header detection below title/blank rows; blank/duplicate header naming; field-kind guessing; **valid import; empty sheet; header-only sheet; missing required values; absent columns; duplicates (case-insensitive); long names; special characters (accents, quotes, `&`, `<>`, CJK)**; blank-row reporting; invalid email/phone; all columns excluded; 500-record validation < 0.5 s |
-| `tests/excelReader.test.ts` | 9 | Visible-sheet listing; rich text, hyperlinks, formulas, dates, zero-padded numbers; merged cells; empty worksheet; unknown sheet; UTF-8 and Windows-1252 CSV; **invalid formats (.xls, .txt), missing file, relative path, non-string path, empty file, corrupt .xlsx**; grid trimming |
-| `tests/main.test.ts` | 7 | File-name sanitising (reserved names, illegal chars, length, Unicode); path safety; settings validation and atomic persistence; CorelDRAW LocalServer32 parsing; mock adapter (never writes .cdr, no overwrite, unknown objects, simulated failures, batch state) |
+| Type-check (strict, main + renderer) | `npm run typecheck` | ✅ pass |
+| Unit tests (no CorelDRAW) | `npm test` | ✅ **95 / 95** |
+| Integration tests (real CorelDRAW v27.2) | `npm run test:corel` | ✅ **9 / 9** |
+| End-to-end, real app + real CorelDRAW (CDP-driven) | scripted, see below | ✅ 16 / 16 steps |
+| Production build | `npm run build` | ✅ |
+| PoC script on v27.2 | `scripts/corel-poc.ps1 -ProgIdVersion 27` | ✅ PASS |
+| **Anything on CorelDRAW X7** | — | ❌ **not run: X7 not available** |
+| Installer | `npm run dist` | not run (Phase 6) |
 
-`npm run typecheck`: clean (strict, `noUncheckedIndexedAccess`). `npm run build`: succeeds.
+## Unit tests (95)
 
-## App-level verification (real Electron app, driven over Chrome DevTools Protocol)
+| File | Tests | Covers |
+|---|---|---|
+| `import.test.ts` | 26 | CSV, normalisation, header detection, validation (Phases 1–3) |
+| `excelReader.test.ts` | 9 | xlsx/csv reading, invalid/corrupt/empty files |
+| `main.test.ts` | 5 | file names, path safety, settings, LocalServer32 parsing |
+| `mapping.test.ts` | 15 | **template mapping**: name keys, synonym auto-match, excluded columns, front/back duplicates, resolve by label, missing/stale/mixed/unmapped issues, values per record, keep vs blank, missing fields, exclusion of error rows, untrusted mapping parsing, reading-order sorting, file naming + batch de-duplication |
+| `navigation.test.ts` | 8 | **preview navigation**: accent-insensitive search, stepping without wrap, clamping, grid paging, record title; zoom levels, fit, real-size CSS dimensions and aspect ratio, dpi buckets |
+| `bridgeProcess.test.ts` | 8 | **error handling** in the bridge client (fake bridge process): Unicode round trip, console noise, error propagation, call serialisation, timeout → kill → restart (generation++), crash → reject → recover, never-ready/missing executable, graceful shutdown |
+| `services.test.ts` | 25 | TemplateStore (original untouched, re-import dedupe, source changed/missing, mapping save/validation, invalid ids/paths, inspection failure cleanup, CorelDRAW unavailable, rename/remove); PreviewService (caching, single working copy, temp cleanup, overflow/notFound, request validation, renderer errors, recovery after restart); GenerationService (outputs, progress, report, history, overflow warnings, per-record failure, missing object, failed save, skip/suffix/overwrite, cancel, duplicate-job prevention, repeat jobs, crash recovery and stop after 3, CorelDRAW unavailable, invalid requests); CorelService version choice |
 
-Built app launched; `tests/fixtures/sample-employees.xlsx` dropped onto the drop zone via a simulated OS file drop.
+## Integration tests against real CorelDRAW v27.2 (9)
 
-| Check | Result |
+`tests/integration/*.int.test.ts`, using the CorelDRAW-built fixture `tests/fixtures/test-card-front-back.cdr`
+(90×50 mm front + back, nested groups, paragraph frame, mixed-format object, static artwork).
+
+| Test | Verifies |
 |---|---|
-| Preload API present, `require` not exposed to renderer | ✅ |
-| Header row auto-detected as row 3 (title + blank row above) | ✅ |
-| 8 records · 4 ready · 3 warnings · 1 error · 1 duplicate group · 1 blank row skipped | ✅ matches the fixture's planted problems |
-| Issues list: missing name (row 7), long name/title (row 8), bad phone + email (row 10), duplicate of row 4 (row 11) | ✅ |
-| Settings: CorelDRAW detection reports "v27 installed, not X7" | ✅ |
-| Light and dark themes render | ✅ |
-| Renderer console errors / exceptions | none |
+| inspect | 2 pages 90×50 mm; 8 named objects; group paths `ContactGroup › PhoneGroup`; back-page object; paragraph flag; mixed-formatting flag; 1 unnamed static text; bounds |
+| apply/export/save/reopen | Unicode (`José Peña-Ñuñez 王小明`), blank values, unknown object reported, paragraph-frame overflow, long-name card-edge overflow, exact page PNGs (531×295 at 150 dpi, both pages), X7-format save, reopened text/font match, untouched objects keep template text |
+| no font drift | after a CJK record, the next Latin record is saved in Arial 14 pt and omitted fields return to template text (regression test for finding #6) |
+| error recovery | missing file, unknown handle; bridge keeps working |
+| pipeline: import | library import, thumbnails, original hash unchanged, no leftover working files |
+| pipeline: preview | front/back renders at 200 dpi; overflow flagged; ~85–105 ms per page |
+| pipeline: generate 12 | 12 CDRs, no temp files, overflow logged for the long name, 3 outputs reopened and verified (incl. one after the CJK record: Arial), template unchanged |
+| pipeline: repeat/skip/fail | blocked output recorded as failed while others succeed; skip run skips all 3; suffix run adds 3 `(2)` files |
+| pipeline: cancel | stops between records; outputs = succeeded count; no temp files |
 
-## CorelDRAW PoC — `scripts/corel-poc.ps1`
+Fixture hash is asserted unchanged after the suite.
 
-| Environment | Result |
+## End-to-end (real Electron app + real CorelDRAW v27.2)
+
+Driven over the Chrome DevTools Protocol with simulated OS file drops, isolated profile (`CARDFORGE_USER_DATA`):
+drop spreadsheet → 8 records · drop CDR → inspected in ~4.7 s · auto-match (7 mapped, Tagline kept) → single
+preview rendered by CorelDRAW (~1 s incl. first open) · navigate to record 5 → side panel shows the length warnings,
+the blank telephone and the CorelDRAW-measured overflow · search “pena” → 1 record · grid → 8 CorelDRAW thumbnails
+(~2.2 s) · generate → 7 CDRs (row 7 excluded for a missing name) in 4.3 s · second run → conflict prompt listing
+existing files → "Keep both" → 7 more files with `(2)` · dashboard lists both jobs. **0 renderer errors or exceptions.**
+
+Bugs found by E2E and fixed: card title used the address instead of the name; mapping table was in CorelDRAW
+stacking order instead of reading order; a removed remembered template showed an error banner.
+
+## Performance (dev PC, CorelDRAW v27.2; NOT X7)
+
+| Operation | Time |
 |---|---|
-| CorelDRAW **v27.2.0.135**, Windows PowerShell 5.1, save format v17 | **PASS**, all 5 steps + template-hash check (see CORELDRAW_INTEGRATION.md) |
-| CorelDRAW **X7** | **NOT RUN — no X7 available.** Required on the client PC. |
+| Template inspection + thumbnails (2 pages) | ~3–5 s (CorelDRAW already running) |
+| Preview, one page | 85–105 ms |
+| Generation, steady state | ~0.4–0.5 s per card |
+| Generation, cards needing font fallback (CJK) | ~1.8 s |
+| 12 cards incl. opening the template | 8.6–8.8 s |
 
-## Not yet tested
+Linear extrapolation gives about 4 minutes for 500 cards, **on this PC with v27**. Not a promise for X7.
 
-- Anything on CorelDRAW X7. CorelDRAW automation failures, crashes, modal dialogs.
-- Template inspection, preview, generation, batch cancellation, repeated jobs, failed output saving (Phases 4–5 not built).
-- Installer build and install on a clean machine.
-- Very large workbooks near the 50 MB / 20,000-row limits (truncation logic is unit-tested on CSV only).
+## Not tested
 
-**This build is not production-ready.** Phases 4–6 remain, and real X7 integration is unverified.
+- **Everything on CorelDRAW X7** (API compatibility, Undo/command groups, `Text.Overflow`, export area, performance, licence/edition automation).
+- PowerClip contents; master-page objects (not supported); text on a path.
+- CorelDRAW modal dialogs during automation (missing-font dialog, crash recovery).
+- Large real batches (500) and real client templates/spreadsheets.
+- Installer and clean-machine install.

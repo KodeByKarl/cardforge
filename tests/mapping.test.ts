@@ -7,6 +7,7 @@ import {
   buildGenerationInputs,
   mappingIssues,
   mappingKey,
+  objectNamesByPosition,
   missingFieldsFor,
   parseSavedMapping,
   resolveMapping,
@@ -125,6 +126,14 @@ describe('record values', () => {
     expect(records.map((r) => r.rowNumber)).toEqual([2, 4])
     expect(excluded).toEqual([{ rowNumber: 3, reason: expect.stringContaining('Full Name') }])
     expect(records[0]!.fields['Full Name']).toBe('Ana Cruz')
+  })
+})
+
+describe('objectNamesByPosition', () => {
+  it('orders objects front before back, top to bottom, then left to right', () => {
+    const at = (name: string, pageIndex: number, top: number, left = 10) => ({ ...FRONT_BACK.objects[0]!, name, pageIndex, bounds: { left, right: left + 5, top, bottom: top - 3 } })
+    const objects = [at('Company', 2, 30), at('Address', 1, 15, 50), at('Email', 1, 15, 10), at('FullName', 1, 40)]
+    expect(objectNamesByPosition(objects)).toEqual(['FullName', 'Email', 'Address', 'Company'])
   })
 })
 

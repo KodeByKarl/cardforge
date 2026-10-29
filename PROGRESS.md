@@ -12,3 +12,15 @@
 
 **Blocked on client:** X7 PoC run, real template, real spreadsheet, print specs (REQUIREMENTS.md).
 **Next:** Phase 4: PowerShell bridge (`inspectTemplate`), template setup + mapping screen.
+
+## 2026-10-29: Phases 4 and 5 (verified on CorelDRAW v27.2; X7 pending)
+- Probed the real CorelDRAW object model: enum constants read from the v27 type library; members listed via COM.
+- Built `corel-bridge.ps1` (persistent COM worker) + `BridgeProcess` + `PowerShellCorelAdapter`, behind the existing adapter interface.
+- Template library, mapping editor, CorelDRAW-rendered preview (single/grid, front/back, zoom, search, navigation), generation engine, job history, dashboard.
+- Findings from real CorelDRAW that changed the design: page export crops to content (fixed with an export area); font drift after CJK text (fixed with undo per record); last-saved file locked (deferred rename); growing paragraph frames never overflow (card-edge check). See CORELDRAW_INTEGRATION.md §4.
+- A probe that would have closed unsaved CorelDRAW documents was blocked by the permission system. The rule "only touch our own documents" is now in the bridge.
+- Tests: 95 unit, 9 integration (real CorelDRAW), 16-step E2E in the real app. Typecheck and build pass.
+- Dev-PC housekeeping: four orphaned, unsaved `Untitled-1..4` documents from failed early probe runs sat in a hidden CorelDRAW automation instance. They were left alone, pending the user's decision.
+
+**Blocked on client:** X7 validation run, real template, real spreadsheet, print specs.
+**Next:** Phase 6, after the X7 results.

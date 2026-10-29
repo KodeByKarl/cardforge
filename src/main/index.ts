@@ -50,6 +50,9 @@ function bridgeScriptPath(): string {
   return app.isPackaged ? join(process.resourcesPath, 'corel', 'corel-bridge.ps1') : join(app.getAppPath(), 'resources', 'corel', 'corel-bridge.ps1')
 }
 
+// Lets automated end-to-end runs use an isolated profile instead of the operator's real data.
+if (process.env['CARDFORGE_USER_DATA']) app.setPath('userData', process.env['CARDFORGE_USER_DATA'])
+
 if (!app.requestSingleInstanceLock()) {
   app.quit()
 } else {

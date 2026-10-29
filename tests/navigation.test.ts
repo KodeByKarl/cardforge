@@ -9,6 +9,7 @@ import {
   fitZoom,
   gridPage,
   pageOfIndex,
+  recordTitle,
   searchRecords,
   stepIndex,
   zoomIn,
@@ -43,6 +44,18 @@ describe('preview navigation', () => {
     expect(gridPage(25, 9, 12).page).toBe(2)
     expect(gridPage(0, 0, 12)).toEqual({ page: 0, pageCount: 1, start: 0, end: 0 })
     expect(pageOfIndex(13, 12)).toBe(1)
+  })
+})
+
+describe('recordTitle', () => {
+  it('uses the name column even when other columns come first, else the first included column', () => {
+    const g = [['Address', 'Full Name'], ['Makati City', 'Ana Cruz']]
+    const cols = buildColumns(g, 0)
+    const rec = buildDataset(g, 0, cols).records[0]!
+    expect(recordTitle(rec, cols)).toBe('Ana Cruz')
+    const noName = cols.map((c) => (c.label === 'Full Name' ? { ...c, include: false } : c))
+    expect(recordTitle(rec, noName)).toBe('Makati City')
+    expect(recordTitle(rec, [])).toBe('')
   })
 })
 

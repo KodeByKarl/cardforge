@@ -1,32 +1,36 @@
 import { useState } from 'react'
+import { hasBlockingMappingIssues } from '../../shared/template/mapping'
 import { ErrorBoundary } from './components/ErrorBoundary'
 import { StatusDot } from './components/ui'
 import { DashboardScreen } from './screens/DashboardScreen'
+import { GenerateScreen } from './screens/GenerateScreen'
 import { ImportScreen } from './screens/ImportScreen'
-import { PlannedScreen } from './screens/PlannedScreen'
+import { PreviewScreen } from './screens/PreviewScreen'
 import { SettingsScreen } from './screens/SettingsScreen'
+import { TemplateScreen } from './screens/TemplateScreen'
+import { GenerationProvider, useGeneration } from './state/generation'
 import { JobProvider, useJob } from './state/job'
+import { TemplatesProvider, useTemplates } from './state/templates'
 
 export type ScreenKey = 'dashboard' | 'import' | 'template' | 'preview' | 'generate' | 'settings'
 
-interface NavItem {
-  key: ScreenKey
-  label: string
-  step?: number
-  planned?: boolean
-}
+type Tone = 'neutral' | 'ok' | 'warn' | 'error' | 'info'
 
-const WORKFLOW: NavItem[] = [
+const WORKFLOW: { key: ScreenKey; label: string; step: number }[] = [
   { key: 'import', label: 'Excel import', step: 1 },
-  { key: 'template', label: 'Template setup', step: 2, planned: true },
-  { key: 'preview', label: 'Card preview', step: 3, planned: true },
-  { key: 'generate', label: 'Generate', step: 4, planned: true }
+  { key: 'template', label: 'Template setup', step: 2 },
+  { key: 'preview', label: 'Card preview', step: 3 },
+  { key: 'generate', label: 'Generate', step: 4 }
 ]
 
 export function App() {
   return (
     <JobProvider>
-      <Shell />
+      <TemplatesProvider>
+        <GenerationProvider>
+          <Shell />
+        </GenerationProvider>
+      </TemplatesProvider>
     </JobProvider>
   )
 }
@@ -34,8 +38,14 @@ export function App() {
 function Shell() {
   const [screen, setScreen] = useState<ScreenKey>('dashboard')
   const { state, validation } = useJob()
+  const { selected, issues } = useTemplates()
+  const { running } = useGeneration()
 
-  const importTone = state.phase === 'error' ? 'error' : !validation ? 'neutral' : validation.recordsWithErrors > 0 ? 'warn' : 'ok'
+  const tones: Partial<Record<ScreenKey, Tone>> = {
+    import: state.phase === 'error' ? 'error' : !validation ? 'neutral' : validation.recordsWithErrors > 0 ? 'warn' : 'ok',
+    template: !selected ? 'neutral' : hasBlockingMappingIssues(issues) ? 'error' : issues.length ? 'warn' : 'ok',
+    generate: running ? 'info' : 'neutral'
+  }
 
   return (
     <div className="flex h-full">
@@ -55,8 +65,8 @@ function Shell() {
             <NavButton key={item.key} active={screen === item.key} onClick={() => setScreen(item.key)}>
               <span className="w-4 text-xs tabular-nums text-stone-400">{item.step}</span>
               <span className="flex-1">{item.label}</span>
-              {item.key === 'import' && <StatusDot tone={importTone} />}
-              {item.planned && <span className="text-[10px] font-semibold uppercase text-stone-400">Planned</span>}
+              {tones[item.key] && tones[item.key] !== 'neutral' && <StatusDot tone={tones[item.key]!} />}
+              {item.key === 'generate' && running && <span className="text-[10px] font-semibold uppercase text-teal-700 dark:text-teal-400">Running</span>}
             </NavButton>
           ))}
         </div>
@@ -70,7 +80,9 @@ function Shell() {
         <ErrorBoundary area={screen} key={screen}>
           {screen === 'dashboard' && <DashboardScreen navigate={setScreen} />}
           {screen === 'import' && <ImportScreen />}
-          {(screen === 'template' || screen === 'preview' || screen === 'generate') && <PlannedScreen screen={screen} />}
+          {screen === 'template' && <TemplateScreen navigate={setScreen} />}
+          {screen === 'preview' && <PreviewScreen navigate={setScreen} />}
+          {screen === 'generate' && <GenerateScreen navigate={setScreen} />}
           {screen === 'settings' && <SettingsScreen />}
         </ErrorBoundary>
       </main>
