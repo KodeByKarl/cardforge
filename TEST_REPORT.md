@@ -1,5 +1,27 @@
 # Test Report
 
+## CorelDRAW X7 targeted test (2026-10-30, this PC)
+
+Installed: **CorelDRAW Technical Suite X7 17.4.0.887** (`C:\Program Files (x86)\Corel\CorelDRAW Technical Suite X7\`, 32-bit), ProgID `CorelDRAW.Application.17` registered; CorelDRAW 2026 (27.2) is installed alongside and was not touched. The running X7 window title reads **"CorelDRAW X7 (Evaluation Version)"**: it is an evaluation/trial build, **not an activated licence**, and the installer found in Downloads came from a software-piracy site. CardForge did not alter licensing; the test below is a technical compatibility check only. The client must use a properly licensed X7.
+
+Command: `CARDFORGE_COREL_PROGID=CorelDRAW.Application.17 npx vitest run --config vitest.integration.config.ts tests/integration/x7smoke.int.test.ts` (4 synthetic-data steps + the real templates as private copies, 10 synthetic records, one sheet each).
+
+| Check | Result on X7 17.4.0.887 |
+|---|---|
+| COM automation reachable (attach to the running X7, version read) | ✅ |
+| Compatibility check, all 15 steps (inspect, name objects + save v17, reopen, fill + clear empty positions, undo, per-layer page copy, page-scoped fill, PNG export, save 2 pages, PDF export, light reopen + page count, font check) | ✅ 15/15 |
+| `card layout final.cdr`: import, 20 unnamed text objects, 2 × 5 grid, prepare, map, 1 sheet of 10 records, CDR + PDF, reopen, preview | ✅ 20 text objects match the 10 records exactly; page 210 × 297 mm; no object outside its card; preview 827 × 1169 px at 100 dpi (as expected); 0 overflow warnings |
+| `guide (2).cdr`: same | ✅ 40 text objects match exactly; same dimensions; 0 overflow warnings |
+| Fonts | ⚠ both templates use **Gotham Medium / Gotham Black**, **not installed** on this PC: CorelDRAW X7 substitutes (Gotham Medium → Segoe Print); CardForge warns. With Gotham installed this is expected to resolve; not verified |
+| Compatibility defects found | none: no code change was needed for X7 |
+
+Not run on X7: the Electron end-to-end suites, large batches, physical print. X7 is slow over 32-bit COM (inspecting the sample took ≈30 s; each real-template sheet job ≈ 1 min), so e2e timeouts tuned on CorelDRAW 27 may need raising on X7. A dev e2e run started after X7 appeared on this PC showed template-inspection timeouts and was stopped (not investigated).
+
+When both versions are installed CardForge prefers X7; set `CARDFORGE_COREL_PROGID=CorelDRAW.Application.27` to force 27.
+
+---
+
+
 ## Client-workflow adaptation (card sheets), latest full run: 2026-10-30
 
 Windows 11 · Node 26 · Electron 33.2.1 · **CorelDRAW 27.2** (not X7). All data and templates in committed tests are synthetic.

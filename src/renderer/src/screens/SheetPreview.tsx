@@ -1,10 +1,11 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { buildSheetValues, planSheets } from '../../../shared/sheet/compose'
+import { buildSheetValues, cellExtentIssues, planSheets, recordsForSheet } from '../../../shared/sheet/compose'
 import { CSS_PX_PER_MM, cardCssSize, clampIndex, dpiForZoom, fitZoom, recordTitle, searchRecords, zoomIn, zoomOut } from '../../../shared/preview/navigation'
 import type { SheetCell, SheetRole } from '../../../shared/sheet/types'
 import type { TemplateRecord } from '../../../shared/template/types'
 import type { ImportRecord } from '../../../shared/types'
 import { Icon } from '../components/icons'
+import { SheetModePicker } from '../components/SheetModePicker'
 import { Badge, Banner, Button, EmptyState, IconButton, PageHeader, Spinner, useElementSize } from '../components/ui'
 import { X7Notice } from '../components/X7Notice'
 import { useSheetData } from '../state/sheet'
@@ -46,11 +47,12 @@ export function SheetPreview({ template }: { template: TemplateRecord }) {
   const [canvasRef, canvasSize] = useElementSize<HTMLDivElement>()
 
   const columns = dataset?.columns ?? []
-  const plan = useMemo(() => planSheets(eligible.length, settings.cardsPerSheet), [eligible.length, settings.cardsPerSheet])
+  const mode = settings.mode
+  const plan = useMemo(() => planSheets(eligible.length, mode === 'copies' ? 1 : settings.cardsPerSheet), [eligible.length, mode, settings.cardsPerSheet])
   const sheetCount = plan.sheets.length
   const current = clampIndex(sheetNumber - 1, sheetCount) + 1
   const item = plan.sheets[current - 1]
-  const records = useMemo(() => (item ? eligible.slice(item.first, item.first + item.count) : []), [eligible, item])
+  const records = useMemo(() => (item && mode ? recordsForSheet(mode, settings.cardsPerSheet, eligible, item) : []), [eligible, item, mode, settings.cardsPerSheet])
   const built = useMemo(() => buildSheetValues(sheet, mapping, records, columns), [sheet, mapping, records, columns])
   const page = template.inspection.pages.find((p) => p.index === sheet.pageIndex) ?? template.inspection.pages[0]!
 
@@ -72,11 +74,15 @@ export function SheetPreview({ template }: { template: TemplateRecord }) {
 
   const goToRecord = useCallback(
     (recordIndex: number) => {
-      const s = Math.floor(recordIndex / settings.cardsPerSheet) + 1
-      setSheetNumber(s)
+      if (mode === 'copies') {
+        setSheetNumber(recordIndex + 1)
+        setSelected(null)
+        return
+      }
+      setSheetNumber(Math.floor(recordIndex / settings.cardsPerSheet) + 1)
       setSelected((recordIndex % settings.cardsPerSheet) + 1)
     },
-    [settings.cardsPerSheet]
+    [settings.cardsPerSheet, mode]
   )
   useEffect(() => {
     setMatchAt(0)
@@ -127,6 +133,9 @@ export function SheetPreview({ template }: { template: TemplateRecord }) {
       if (!p) continue
       byCell.set(p.cell, [...(byCell.get(p.cell) ?? []), `${sheet.roles.find((r) => r.id === p.role)?.label ?? o.name}: ${o.reason ?? 'may not fit'}`])
     }
+    for (const x of cellExtentIssues(sheet, result?.objects ?? [])) {
+      byCell.set(x.cell, [...(byCell.get(x.cell) ?? []), `${sheet.roles.find((r) => r.id === x.roleId)?.label ?? x.roleId}: ${x.message}`])
+    }
     return byCell
   }, [result, sheet.roles])
   const blanks = useMemo(() => {
@@ -145,6 +154,18 @@ export function SheetPreview({ template }: { template: TemplateRecord }) {
     })
     return byCell
   }, [records, sheet.roles, mapping, columns])
+
+  if (!mode) {
+    return (
+      <div className="flex h-full flex-col" data-testid="sheet-preview-choose-mode">
+        <PageHeader title="Sheet preview" />
+        <div className="mx-auto w-full max-w-2xl p-6">
+          <p className="mb-3 text-base font-semibold">How should the sheets be filled?</p>
+          <SheetModePicker value={mode} onChange={(m) => setSettings({ mode: m })} cards={settings.cardsPerSheet} />
+        </div>
+      </div>
+    )
+  }
 
   if (sheetCount === 0) {
     return (
@@ -165,7 +186,7 @@ export function SheetPreview({ template }: { template: TemplateRecord }) {
 
   return (
     <div className="flex h-full flex-col" data-testid="sheet-preview">
-      <PageHeader title="Sheet preview" description={`A4 ${page.widthMm} × ${page.heightMm} mm · ${settings.cardsPerSheet} cards per sheet · rendered by CorelDRAW ${template.inspection.corelVersion.replace(/^Version /, '')}`} />
+      <PageHeader title="Sheet preview" description={`A4 ${page.widthMm} × ${page.heightMm} mm · ${mode === 'copies' ? `${settings.cardsPerSheet} copies of one record` : `${settings.cardsPerSheet} different records`} per sheet · rendered by CorelDRAW ${template.inspection.corelVersion.replace(/^Version /, '')}`} />
       <div className="flex flex-wrap items-center gap-x-2 gap-y-1 border-b border-line bg-surface px-3 py-1.5" role="toolbar" aria-label="Sheet controls">
         <div className="relative">
           <Icon name="search" size={14} className="pointer-events-none absolute left-2 top-[7px] text-fg-subtle" />
@@ -286,7 +307,7 @@ export function SheetPreview({ template }: { template: TemplateRecord }) {
           )}
           <div className="flex h-6 shrink-0 items-center gap-3 border-t border-line bg-surface px-3 text-xs text-fg-muted">
             <span className="tabular-nums">
-              {item?.count ?? 0} of {settings.cardsPerSheet} positions filled · {dpi} dpi
+              {records.length} of {settings.cardsPerSheet} positions filled · {dpi} dpi
             </span>
             {warningCount === 0 && result && !loading ? <span className="text-ok">No problems on this sheet</span> : warningCount > 0 ? <span className={overflow.size ? 'text-err' : 'text-warn'}>{overflow.size ? `${overflow.size} card(s) with text that may not fit` : ''}{overflow.size && blanks.size ? ' · ' : ''}{blanks.size ? `${blanks.size} card(s) with blank fields` : ''}</span> : null}
             <label className="ml-auto flex items-center gap-1.5">
@@ -314,7 +335,7 @@ export function SheetPreview({ template }: { template: TemplateRecord }) {
                   <dt className="text-fg-muted">Sheets</dt>
                   <dd className="tabular-nums">{sheetCount.toLocaleString()}</dd>
                   <dt className="text-fg-muted">This sheet</dt>
-                  <dd className="tabular-nums">{item?.count} cards</dd>
+                  <dd className="tabular-nums">{records.length} cards</dd>
                   {excludedRows.length > 0 && (
                     <>
                       <dt className="text-fg-muted">Left out</dt>
@@ -322,6 +343,9 @@ export function SheetPreview({ template }: { template: TemplateRecord }) {
                     </>
                   )}
                 </dl>
+                <div className="mt-3">
+                  <SheetModePicker value={mode} onChange={(m) => setSettings({ mode: m })} cards={settings.cardsPerSheet} />
+                </div>
                 {sheet.cells.length > 1 && (
                   <label className="mt-3 block text-xs">
                     <span className="label block">Cards per sheet</span>

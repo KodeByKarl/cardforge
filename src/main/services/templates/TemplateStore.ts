@@ -262,6 +262,14 @@ export class TemplateStore {
     return this.write({ ...rest, inspection, pages: inspection.pages, objectCount: inspection.objects.length, sheet: null, sheetMapping: null })
   }
 
+  /** Fonts used by the template that are not installed on this PC (CorelDRAW would substitute them without telling). */
+  async missingFonts(id: string): Promise<string[]> {
+    const record = await this.get(id)
+    const fonts = [...new Set([...record.inspection.objects.map((o) => o.font), ...(record.inspection.unnamed ?? []).map((o) => o.font)].filter(Boolean))]
+    if (fonts.length === 0) return []
+    return (await this.getAdapter()).checkFonts(fonts)
+  }
+
   async saveSheetMapping(id: string, mapping: unknown): Promise<TemplateRecord> {
     let parsed
     try {

@@ -87,6 +87,7 @@ describe.skipIf(!progId || !enabled || !existsSync(FIXTURE))('CorelDRAW sheet be
       await service.start({
         templateId,
         outputDirectory: out,
+        mode: 'unique',
         cardsPerSheet: 10,
         sheetsPerFile,
         exportPdf: pdf,

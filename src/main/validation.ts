@@ -67,12 +67,13 @@ export const MAX_SHEET_RECORDS = 250_000
 
 export function parseSheetGenerationRequest(value: unknown): SheetGenerationRequest {
   if (!isRecord(value)) invalid('Generation request must be an object.')
-  const { outputDirectory, cardsPerSheet, sheetsPerFile, exportPdf, clearEmpty, overwrite, columns, records, excludedRows } = value
+  const { outputDirectory, mode, cardsPerSheet, sheetsPerFile, exportPdf, clearEmpty, overwrite, columns, records, excludedRows } = value
   if (typeof outputDirectory !== 'string' || !isAbsolute(outputDirectory) || outputDirectory.length > 400 || outputDirectory.includes('\0')) invalid('Choose a valid output folder.')
   const int = (v: unknown, min: number, max: number, what: string): number => {
     if (typeof v !== 'number' || !Number.isInteger(v) || v < min || v > max) invalid(`${what} must be a whole number from ${min} to ${max}.`)
     return v
   }
+  if (mode !== 'unique' && mode !== 'copies') invalid('Choose the production mode: different records on every card, or copies of one record.')
   if (!['resume', 'skip', 'suffix', 'overwrite'].includes(overwrite as string)) invalid('Invalid overwrite choice.')
   if (!Array.isArray(columns) || columns.length === 0 || columns.length > 200) invalid('Invalid columns.')
   const cols = columns.map((c: unknown) => {
@@ -96,6 +97,7 @@ export function parseSheetGenerationRequest(value: unknown): SheetGenerationRequ
   return {
     templateId: parseId(value.templateId, 'template id'),
     outputDirectory,
+    mode,
     cardsPerSheet: int(cardsPerSheet, 1, 100, 'Cards per sheet'),
     sheetsPerFile: int(sheetsPerFile, 1, 500, 'Sheets per file'),
     exportPdf: exportPdf === true,

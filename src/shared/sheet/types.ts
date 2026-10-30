@@ -125,6 +125,12 @@ export interface SheetRecordInput {
   values: Record<string, string>
 }
 
+/**
+ * How a sheet is filled. Always chosen explicitly by the operator, never assumed:
+ * unique = a different record in every card position; copies = every position of a sheet holds the same record.
+ */
+export type SheetMode = 'unique' | 'copies'
+
 /** resume: keep batches that a previous identical run completed. skip/suffix/overwrite decide what to do with other existing files. */
 export type SheetOverwrite = 'resume' | 'skip' | 'suffix' | 'overwrite'
 
@@ -132,6 +138,7 @@ export interface SheetGenerationRequest {
   templateId: string
   outputDirectory: string
   /** How many cards of the template's grid are used (the first N positions); at most the number of cells. */
+  mode: SheetMode
   cardsPerSheet: number
   sheetsPerFile: number
   exportPdf: boolean
@@ -159,6 +166,7 @@ export interface SheetPlanBatch {
 }
 
 export interface SheetGenerationPlan {
+  mode: SheetMode
   cardsPerSheet: number
   sheets: number
   records: number
@@ -169,6 +177,8 @@ export interface SheetGenerationPlan {
   fingerprint: string
   /** Problems that make the plan unsafe (e.g. records not covered exactly once). Empty = correct. */
   problems: string[]
+  /** Things the operator should review but that do not stop the job (e.g. missing fonts). */
+  warnings: string[]
 }
 
 export interface SheetManifestBatch {

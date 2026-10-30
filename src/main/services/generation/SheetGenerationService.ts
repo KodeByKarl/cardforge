@@ -3,7 +3,7 @@ import { mkdir, open, rename, rm, stat, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { sanitizeFileName } from '../../../shared/generation/naming'
 import { batchFileName, planBatches, verifyBatches, type BatchPlan, type BatchPlanItem } from '../../../shared/sheet/batches'
-import { buildSheetValues, hasBlockingSheetIssues, sheetMappingIssues } from '../../../shared/sheet/compose'
+import { buildSheetValues, cellExtentIssues, hasBlockingSheetIssues, recordsForSheet, sheetMappingIssues } from '../../../shared/sheet/compose'
 import type { SheetGenerationPlan, SheetGenerationRequest, SheetManifest, SheetManifestBatch, SheetPlanBatch } from '../../../shared/sheet/types'
 import type { JobLogEntry, JobProgress, JobSummary, TemplateRecord } from '../../../shared/template/types'
 import type { ColumnConfig, ImportRecord } from '../../../shared/types'
@@ -88,9 +88,9 @@ export class SheetGenerationService {
     const blocking = sheetMappingIssues(sheet, template.sheetMapping, columns, samples).filter((i) => i.severity === 'error')
     if (hasBlockingSheetIssues(blocking)) throw new AppError('MAPPING_BLOCKED', blocking[0]!.message)
     // Only the first `cardsPerSheet` positions receive records; planBatches uses that as the sheet size.
-    const plan = planBatches(records.length, request.cardsPerSheet, request.sheetsPerFile)
+    const plan = planBatches(records.length, request.cardsPerSheet, request.sheetsPerFile, request.mode)
     const fingerprint = createHash('sha256')
-      .update(JSON.stringify([template.id, template.updatedAt, request.cardsPerSheet, request.sheetsPerFile, request.clearEmpty, request.records]))
+      .update(JSON.stringify([template.id, template.updatedAt, request.mode, request.cardsPerSheet, request.sheetsPerFile, request.clearEmpty, request.records]))
       .digest('hex')
     return { request, template, columns, records, plan, prefix: sanitizeFileName(template.name) || 'Cards', fingerprint }
   }
@@ -139,6 +139,7 @@ export class SheetGenerationService {
     }
     const completedCount = batches.filter((b) => b.completed).length
     return {
+      mode: p.request.mode,
       cardsPerSheet: p.request.cardsPerSheet,
       sheets: p.plan.sheetPlan.sheets.length,
       records: p.records.length,
@@ -147,7 +148,17 @@ export class SheetGenerationService {
       resumable: completedCount > 0,
       completed: completedCount,
       fingerprint: p.fingerprint,
-      problems: verifyBatches(p.plan)
+      problems: verifyBatches(p.plan),
+      warnings: await this.fontWarnings(p.template.id)
+    }
+  }
+
+  private async fontWarnings(templateId: string): Promise<string[]> {
+    try {
+      const missing = await this.deps.store.missingFonts(templateId)
+      return missing.length ? [`Font${missing.length > 1 ? 's' : ''} not installed on this PC: ${missing.join(', ')}. CorelDRAW will substitute ${missing.length > 1 ? 'them' : 'it'} and text widths will change.`] : []
+    } catch {
+      return []
     }
   }
 
@@ -361,6 +372,7 @@ export class SheetGenerationService {
       } catch (err) {
         verification.push(`Verification could not run: ${(err as Error).message}`)
       }
+      verification.push(...(await this.fontWarnings(template.id)).map((w) => `Warning: ${w}`))
       summary.sheetJob!.verification = verification
       summary.sheetJob!.manifestPath = manifestPath
       try {
@@ -416,11 +428,12 @@ export class SheetGenerationService {
       for (const [k, s] of sheets.entries()) {
         if (job.cancelRequested) throw new CancelledError()
         const page = k === 0 ? sheet.pageIndex : originalPages + k
-        const recs = p.records.slice(s.first, s.first + s.count)
+        const recs = recordsForSheet(request.mode, request.cardsPerSheet, p.records, s)
         const sv = buildSheetValues(sheet, mapping, recs, p.columns)
         const regions = request.clearEmpty ? sv.emptyRegions : []
         const applied = await adapter.applyText(handle, sv.values, this.deps.safeMarginMm(), { page, keep: true, clearRegions: regions, clearPage: page })
         if (applied.notFound.length > 0) throw new AppError('SHAPE_NOT_FOUND', `The prepared template has no object named ${applied.notFound.slice(0, 3).map((n) => `“${n}”`).join(', ')}. Prepare the template again.`)
+        for (const x of cellExtentIssues(sheet, applied.objects)) overflow.push(`Sheet ${s.number}, card ${x.cell}, text ${Number(x.roleId.slice(1))}: ${x.message}`)
         for (const o of applied.objects) {
           if (!o.overflow) continue
           const m = /^C(\d+)_f(\d+)$/.exec(o.name)
@@ -498,6 +511,7 @@ export class SheetGenerationService {
       `CardForge print job summary`,
       `Template: ${summary.templateName}`,
       `Started: ${summary.startedAt}   Finished: ${summary.finishedAt}   Status: ${summary.status}`,
+      `Production mode: ${request.mode === 'copies' ? `${request.cardsPerSheet} COPIES of each record on its own sheet` : `${request.cardsPerSheet} DIFFERENT records per sheet`}`,
       `Records: ${p.records.length}   Sheets: ${manifest.totalSheets} (${request.cardsPerSheet} cards per A4 sheet)   Files: ${manifest.batches.length} (${request.sheetsPerFile} sheets per file)`,
       `Excluded because of errors: ${request.excludedRows.length}${request.excludedRows.length ? ` (rows ${request.excludedRows.slice(0, 50).join(', ')}${request.excludedRows.length > 50 ? ', …' : ''})` : ''}`,
       note,

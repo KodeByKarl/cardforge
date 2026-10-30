@@ -1,6 +1,6 @@
 import type { ColumnConfig, ImportRecord } from '../types'
 import type { Bounds, ShapeValues } from '../template/types'
-import type { LineFill, SheetConfig, SheetMapping, SheetMappingIssue, SheetPlan, SheetRole } from './types'
+import type { LineFill, SheetConfig, SheetMapping, SheetMappingIssue, SheetMode, SheetPlan, SheetRole } from './types'
 
 // ---- Imposition: which records go on which sheet ----
 
@@ -51,6 +51,12 @@ export function composeRoleText(role: SheetRole, fills: LineFill[] | undefined, 
   return lines.every((l) => l.trim().length === 0) ? '' : lines.join('\n')
 }
 
+/** The record shown in each card position of a sheet (index 0 = card 1). */
+export function recordsForSheet(mode: SheetMode, cardsPerSheet: number, records: ImportRecord[], item: { first: number; count: number }): ImportRecord[] {
+  if (mode === 'copies') return Array.from({ length: cardsPerSheet }, () => records[item.first]!)
+  return records.slice(item.first, item.first + item.count)
+}
+
 export interface SheetValues {
   values: ShapeValues
   /** Card slices with no record on this sheet. Their artwork can be cleared. */
@@ -92,7 +98,7 @@ type LineClass = 'id' | 'name' | 'address' | 'date' | 'text' | 'empty'
 export function classifyLine(line: string): LineClass {
   const t = line.trim()
   if (t.length === 0) return 'empty'
-  if (/^[A-Za-z]{0,4}[ -]?\d{3,}[A-Za-z]?$/.test(t)) return 'id'
+  if (/^[A-Za-z]{1,4}[ -]?\d{3,}$/.test(t) || /^\d{3,}$/.test(t)) return 'id'
   if (/^\d{1,4}[/.-]\d{1,2}[/.-]\d{1,4}$/.test(t) || /^\d{4}-\d{2}-\d{2}$/.test(t)) return 'date'
   const commas = (t.match(/,/g) ?? []).length
   if (commas >= 2) return 'address'
@@ -258,4 +264,21 @@ export function parseSheetMapping(input: unknown): SheetMapping {
   }
   const acknowledged = Array.isArray(raw.acknowledged) ? raw.acknowledged.filter((a): a is string => a === 'prefix') : []
   return { version: 1, fields, acknowledged }
+}
+
+/** Text that extends beyond the card position it belongs to (it would overlap a neighbouring card or the sheet edge). */
+export function cellExtentIssues(config: SheetConfig, objects: { name: string; bounds: Bounds }[], toleranceMm = 0.5): { cell: number; roleId: string; message: string }[] {
+  const out: { cell: number; roleId: string; message: string }[] = []
+  for (const o of objects) {
+    const m = /^C(\d+)_(f\d+)$/.exec(o.name)
+    if (!m) continue
+    const cell = config.cells.find((c) => c.index === Number(m[1]))
+    if (!cell) continue
+    const r = cell.region
+    const b = o.bounds
+    if (b.left < r.left - toleranceMm || b.right > r.right + toleranceMm || b.top > r.top + toleranceMm || b.bottom < r.bottom - toleranceMm) {
+      out.push({ cell: cell.index, roleId: m[2]!, message: 'text extends beyond its card position' })
+    }
+  }
+  return out
 }

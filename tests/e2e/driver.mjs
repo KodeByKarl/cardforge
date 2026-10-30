@@ -14,8 +14,10 @@ export async function launch({ port = 9333, scale = 1, width = 1366, height = 76
   const dir = userData ?? mkdtempSync(join(tmpdir(), 'cardforge-e2e-'))
   const env = { ...process.env, CARDFORGE_USER_DATA: dir }
   delete env.ELECTRON_RUN_AS_NODE // inherited as 1 from VS Code, which would make Electron behave as plain Node
-  const exe = join(ROOT, 'node_modules', 'electron', 'dist', 'electron.exe')
-  const proc = spawn(exe, [ROOT, `--remote-debugging-port=${port}`, `--force-device-scale-factor=${scale}`], { env, stdio: 'ignore' })
+  // CARDFORGE_EXE runs the packaged application (release/<version>/win-unpacked/CardForge.exe or an installed copy).
+  const packaged = process.env.CARDFORGE_EXE
+  const exe = packaged ?? join(ROOT, 'node_modules', 'electron', 'dist', 'electron.exe')
+  const proc = spawn(exe, [...(packaged ? [] : [ROOT]), `--remote-debugging-port=${port}`, `--force-device-scale-factor=${scale}`], { env, stdio: 'ignore' })
   let version
   for (let i = 0; i < 100; i++) {
     try {

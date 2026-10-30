@@ -9,6 +9,8 @@ files:
 extraResources:
   - from: resources/corel
     to: corel
+  - from: resources/samples
+    to: samples
 win:
   target:
     - target: nsis

@@ -1,5 +1,6 @@
 import type { DetectionOptions, DetectionResult, SheetGenerationPlan, SheetGenerationRequest, SheetMapping } from './sheet/types'
 import type {
+  CompatReport,
   CorelStatus,
   GenerationPlan,
   GenerationRequest,
@@ -24,6 +25,7 @@ export const IPC = {
   settingsPickOutputDir: 'settings:pickOutputDir',
   corelDetect: 'corel:detect',
   corelStatus: 'corel:status',
+  corelCompat: 'corel:compat',
   templatesList: 'templates:list',
   templatesGet: 'templates:get',
   templatesPickAndImport: 'templates:pickAndImport',
@@ -36,6 +38,7 @@ export const IPC = {
   templatesPrepareSheet: 'templates:prepareSheet',
   templatesRevertSheet: 'templates:revertSheet',
   templatesSaveSheetMapping: 'templates:saveSheetMapping',
+  templatesMissingFonts: 'templates:missingFonts',
   templatesSourceStatus: 'templates:sourceStatus',
   templatesPageImages: 'templates:pageImages',
   previewRender: 'preview:render',
@@ -77,6 +80,8 @@ export interface CardForgeApi {
   corel: {
     detect(): Promise<IpcResult<CorelDetection>>
     status(): Promise<IpcResult<CorelStatus>>
+    /** Runs every CorelDRAW feature the sheet engine needs against a bundled synthetic sample; writes a report file. */
+    compatibilityCheck(): Promise<IpcResult<CompatReport>>
   }
   templates: {
     list(): Promise<IpcResult<TemplateSummary[]>>
@@ -93,6 +98,8 @@ export interface CardForgeApi {
     prepareSheet(id: string, options?: DetectionOptions): Promise<IpcResult<TemplateRecord>>
     revertSheet(id: string): Promise<IpcResult<TemplateRecord>>
     saveSheetMapping(id: string, mapping: SheetMapping): Promise<IpcResult<TemplateRecord>>
+    /** Template fonts that are not installed on this PC (they would be substituted silently). */
+    missingFonts(id: string): Promise<IpcResult<string[]>>
     sourceStatus(id: string): Promise<IpcResult<TemplateSourceStatus>>
     pageImages(id: string): Promise<IpcResult<{ pageIndex: number; dataUrl: string }[]>>
   }

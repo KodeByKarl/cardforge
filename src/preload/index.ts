@@ -23,7 +23,8 @@ const api: CardForgeApi = {
   },
   corel: {
     detect: () => ipcRenderer.invoke(IPC.corelDetect),
-    status: () => ipcRenderer.invoke(IPC.corelStatus)
+    status: () => ipcRenderer.invoke(IPC.corelStatus),
+    compatibilityCheck: () => ipcRenderer.invoke(IPC.corelCompat)
   },
   templates: {
     list: () => ipcRenderer.invoke(IPC.templatesList),
@@ -38,6 +39,7 @@ const api: CardForgeApi = {
     prepareSheet: (id, options) => ipcRenderer.invoke(IPC.templatesPrepareSheet, id, options),
     revertSheet: (id) => ipcRenderer.invoke(IPC.templatesRevertSheet, id),
     saveSheetMapping: (id, mapping) => ipcRenderer.invoke(IPC.templatesSaveSheetMapping, id, mapping),
+    missingFonts: (id) => ipcRenderer.invoke(IPC.templatesMissingFonts, id),
     sourceStatus: (id) => ipcRenderer.invoke(IPC.templatesSourceStatus, id),
     pageImages: (id) => ipcRenderer.invoke(IPC.templatesPageImages, id)
   },

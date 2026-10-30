@@ -101,6 +101,12 @@ export class PowerShellCorelAdapter implements CorelAdapter {
     await this.bridge.call('saveAs', { handle: this.unwrap(handle), path, version: fileVersion }, DOC_TIMEOUT_MS)
   }
 
+  async checkFonts(fonts: string[]): Promise<string[]> {
+    await this.connect()
+    const { missing } = await this.bridge.call<{ missing: string[] }>('checkFonts', { fonts }, CALL_TIMEOUT_MS)
+    return missing
+  }
+
   async exportPdf(handle: DocHandle, path: string): Promise<void> {
     await this.bridge.call('exportPdf', { handle: this.unwrap(handle), path }, DOC_TIMEOUT_MS * 2)
   }

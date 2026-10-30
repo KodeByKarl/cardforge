@@ -35,6 +35,7 @@ describe.skipIf(!progId || !existsSync(FIXTURE))(`Bulk sheet generation (${progI
   const request = (n: number, over: Partial<SheetGenerationRequest> = {}): SheetGenerationRequest => ({
     templateId,
     outputDirectory: join(root, 'out'),
+    mode: 'unique',
     cardsPerSheet: 10,
     sheetsPerFile: 2,
     exportPdf: true,

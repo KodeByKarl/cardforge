@@ -1,5 +1,5 @@
 import { planSheets, verifyPlan } from './compose'
-import type { SheetBatchPlanItem, SheetPlan } from './types'
+import type { SheetBatchPlanItem, SheetMode, SheetPlan } from './types'
 
 /** One output document: a run of consecutive sheets. */
 export interface BatchPlanItem {
@@ -24,9 +24,10 @@ export const MAX_SHEETS_PER_FILE = 500
 export const DEFAULT_SHEETS_PER_FILE = 25
 
 /** Groups the sheets of a job into output files of `sheetsPerFile` sheets (the last file may be smaller). */
-export function planBatches(total: number, cardsPerSheet: number, sheetsPerFile: number): BatchPlan {
+export function planBatches(total: number, cardsPerSheet: number, sheetsPerFile: number, mode: SheetMode = 'unique'): BatchPlan {
   if (!Number.isInteger(sheetsPerFile) || sheetsPerFile < 1 || sheetsPerFile > MAX_SHEETS_PER_FILE) throw new RangeError(`Sheets per file must be 1–${MAX_SHEETS_PER_FILE}.`)
-  const sheetPlan = planSheets(total, cardsPerSheet)
+  // unique: `cardsPerSheet` records per sheet. copies: one record per sheet (its copies fill the sheet).
+  const sheetPlan = planSheets(total, mode === 'copies' ? 1 : cardsPerSheet)
   const batches: BatchPlanItem[] = []
   for (let i = 0; i < sheetPlan.sheets.length; i += sheetsPerFile) {
     const group: SheetBatchPlanItem[] = sheetPlan.sheets.slice(i, i + sheetsPerFile)

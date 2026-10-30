@@ -1,8 +1,11 @@
 import { useCallback, useState } from 'react'
 import { DEFAULT_SHEETS_PER_FILE } from '../../../shared/sheet/batches'
+import type { SheetMode } from '../../../shared/sheet/types'
 import type { TemplateRecord } from '../../../shared/template/types'
 
 export interface SheetSettings {
+  /** Production mode. null until the operator chooses: it is never assumed. */
+  mode: SheetMode | null
   /** How many of the template's card positions are filled on each sheet. */
   cardsPerSheet: number
   sheetsPerFile: number
@@ -15,13 +18,14 @@ const key = (id: string) => `cardforge.sheet.${id}`
 
 function load(template: TemplateRecord): SheetSettings {
   const cells = template.sheet?.cells.length ?? 1
-  const defaults: SheetSettings = { cardsPerSheet: cells, sheetsPerFile: DEFAULT_SHEETS_PER_FILE, exportPdf: false, clearEmpty: true }
+  const defaults: SheetSettings = { mode: null, cardsPerSheet: cells, sheetsPerFile: DEFAULT_SHEETS_PER_FILE, exportPdf: false, clearEmpty: true }
   try {
     const raw = localStorage.getItem(key(template.id))
     if (!raw) return defaults
     const p = JSON.parse(raw) as Partial<SheetSettings>
     const int = (v: unknown, min: number, max: number, d: number) => (typeof v === 'number' && Number.isInteger(v) && v >= min && v <= max ? v : d)
     return {
+      mode: p.mode === 'unique' || p.mode === 'copies' ? p.mode : null,
       cardsPerSheet: int(p.cardsPerSheet, 1, cells, cells),
       sheetsPerFile: int(p.sheetsPerFile, 1, 500, DEFAULT_SHEETS_PER_FILE),
       exportPdf: p.exportPdf === true,

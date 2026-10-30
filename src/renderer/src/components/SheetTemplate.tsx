@@ -3,7 +3,7 @@ import { suggestSheetMapping } from '../../../shared/sheet/compose'
 import type { DetectionResult, LineFill, SheetConfig, SheetMapping, SheetOrder } from '../../../shared/sheet/types'
 import type { PageInfo, TemplateRecord } from '../../../shared/template/types'
 import { api, errorMessage, unwrap } from '../api'
-import { useSheetData, useSheetIssues } from '../state/sheet'
+import { useMissingFonts, useSheetData, useSheetIssues } from '../state/sheet'
 import { useTemplates } from '../state/templates'
 import { Icon } from './icons'
 import { Badge, Banner, Button, Dialog } from './ui'
@@ -214,6 +214,7 @@ export function SheetMappingEditor({ record, onHighlight, onError, onChanged }: 
       setReverting(false)
     }
   }
+  const missingFonts = useMissingFonts(record.id)
   const prefixIssue = issues.find((i) => i.code === 'PREFIX_UNCONFIRMED')
   const errors = issues.filter((i) => i.severity === 'error' && i.code !== 'PREFIX_UNCONFIRMED' && i.code !== 'NO_MAPPING')
   const warnings = issues.filter((i) => i.severity === 'warning' && i.code !== 'GRID_WARNING')
@@ -296,6 +297,12 @@ export function SheetMappingEditor({ record, onHighlight, onError, onChanged }: 
             />
             The client confirmed the control-number prefix used in the spreadsheet is correct. CardForge prints the spreadsheet value as is.
           </label>
+        )}
+        {missingFonts && missingFonts.length > 0 && (
+          <p className="flex items-start gap-1.5 text-xs text-warn" data-testid="font-warning">
+            <Icon name="alert" size={13} className="mt-0.5" />
+            Font{missingFonts.length > 1 ? 's' : ''} not installed on this PC: {missingFonts.join(', ')}. CorelDRAW will substitute {missingFonts.length > 1 ? 'them' : 'it'} and text widths will change.
+          </p>
         )}
         {errors.map((i, n) => (
           <p key={`e${n}`} className="flex items-start gap-1.5 text-xs text-err">

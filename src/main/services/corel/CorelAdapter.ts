@@ -44,6 +44,8 @@ export interface CorelAdapter {
   /** Renders whole pages (exact page area) to PNG files in `dir`. */
   exportPages(handle: DocHandle, options: { dir: string; prefix: string; dpi: number; pages: number[] }): Promise<ExportedPage[]>
   saveAs(handle: DocHandle, path: string, fileVersion: number): Promise<void>
+  /** Font names that are not installed (CorelDRAW would substitute them silently). */
+  checkFonts(fonts: string[]): Promise<string[]>
   /** Writes every page of the document as one PDF. */
   exportPdf(handle: DocHandle, path: string): Promise<void>
   dispose(): Promise<void>

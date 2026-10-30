@@ -208,6 +208,20 @@ function Cmd-DocInfo($a) {
   return @{ pages = [int]$d.doc.Pages.Count }
 }
 
+# Which of the given font names are not installed in Windows. CorelDRAW substitutes a missing font silently, so this is
+# the only warning the operator gets. Names are compared case-insensitively against the installed font families.
+function Cmd-CheckFonts($a) {
+  Add-Type -AssemblyName System.Drawing
+  $installed = @{}
+  foreach ($f in (New-Object System.Drawing.Text.InstalledFontCollection).Families) { $installed[$f.Name.ToLowerInvariant()] = $true }
+  $missing = New-Object System.Collections.ArrayList
+  foreach ($name in $a.fonts) {
+    $n = ([string]$name).ToLowerInvariant()
+    if (-not $installed.ContainsKey($n)) { [void]$missing.Add([string]$name) }
+  }
+  return @{ missing = [object[]]$missing; installedCount = $installed.Count }
+}
+
 function Cmd-CloseDoc($a) {
   $h = [string]$a.handle
   if ($script:docs.ContainsKey($h)) {
@@ -522,6 +536,7 @@ function Invoke-Request([string]$cmd, $a) {
     'openDoc' { return Cmd-OpenDoc $a }
     'closeDoc' { return Cmd-CloseDoc $a }
     'docInfo' { return Cmd-DocInfo $a }
+    'checkFonts' { return Cmd-CheckFonts $a }
     'inspect' { return Cmd-Inspect $a }
     'apply' { return Cmd-Apply $a }
     'nameShapes' { return Cmd-NameShapes $a }
@@ -539,7 +554,9 @@ function Error-Code($ex) {
   $inner = $ex
   while ($inner) {
     if ($inner -is [System.Runtime.InteropServices.COMException]) {
-      switch ([uint32]$inner.ErrorCode) {
+      # HRESULTs are negative Int32 values (e.g. E_FAIL = -2147467259); casting them to UInt32 would throw inside this handler
+      # and kill the whole bridge. PowerShell parses the hex literals below as the same negative Int32 values.
+      switch ([int]$inner.ErrorCode) {
         0x8001010A { return 'COREL_BUSY' }        # RPC_E_SERVERCALL_RETRYLATER: modal dialog or busy
         0x800706BA { return 'COREL_GONE' }        # RPC_S_SERVER_UNAVAILABLE: CorelDRAW exited/crashed
         0x80010108 { return 'COREL_GONE' }        # RPC_E_DISCONNECTED

@@ -6,11 +6,12 @@ import type { AppSettings } from '../../../shared/types'
 import type { ScreenKey } from '../App'
 import { api, errorMessage, unwrap } from '../api'
 import { Icon } from '../components/icons'
+import { SheetModePicker } from '../components/SheetModePicker'
 import { Banner, Button, Dialog, EmptyState, PageHeader, Section, useToast } from '../components/ui'
 import { X7Notice } from '../components/X7Notice'
 import { useCorelStatus } from '../state/corel'
 import { useGeneration } from '../state/generation'
-import { useSheetData } from '../state/sheet'
+import { useMissingFonts, useSheetData } from '../state/sheet'
 import { useSheetSettings } from '../state/sheetSettings'
 import { useTemplates } from '../state/templates'
 import { Check, Completion, JobLog, RunSummary } from './GenerateScreen'
@@ -33,6 +34,7 @@ export function SheetGenerateScreen({ template, navigate }: { template: Template
   const generation = useGeneration()
   const toast = useToast()
   const [settings, setSettings] = useSheetSettings(template)
+  const missingFonts = useMissingFonts(template.id)
   const [app, setApp] = useState<AppSettings | null>(null)
   const [outputDir, setOutputDir] = useState('')
   const [error, setError] = useState<string | null>(null)
@@ -59,16 +61,17 @@ export function SheetGenerateScreen({ template, navigate }: { template: Template
     if (!running) startedAt.current = null
   }, [running])
 
-  const plan = useMemo(() => (eligible.length > 0 ? planBatches(eligible.length, settings.cardsPerSheet, Math.min(settings.sheetsPerFile, MAX_SHEETS_PER_FILE)) : null), [eligible.length, settings.cardsPerSheet, settings.sheetsPerFile])
+  const plan = useMemo(() => (eligible.length > 0 ? planBatches(eligible.length, settings.cardsPerSheet, Math.min(settings.sheetsPerFile, MAX_SHEETS_PER_FILE), settings.mode ?? 'unique') : null), [eligible.length, settings.cardsPerSheet, settings.sheetsPerFile, settings.mode])
   const sheets = plan?.sheetPlan.sheets.length ?? 0
   const lastSheet = plan?.sheetPlan.sheets.at(-1)
   const blocking = issues.filter((i) => i.severity === 'error')
-  const ready = !!dataset && eligible.length > 0 && blocking.length === 0 && !!corel?.available && outputDir.length > 0
-  const blocker = !dataset || eligible.length === 0 ? 'Import records first' : blocking.length > 0 ? blocking[0]!.message : !corel?.available ? 'CorelDRAW is not available' : !outputDir ? 'Choose an output folder' : null
+  const ready = !!settings.mode && !!dataset && eligible.length > 0 && blocking.length === 0 && !!corel?.available && outputDir.length > 0
+  const blocker = !settings.mode ? 'Choose the production mode' : !dataset || eligible.length === 0 ? 'Import records first' : blocking.length > 0 ? blocking[0]!.message : !corel?.available ? 'CorelDRAW is not available' : !outputDir ? 'Choose an output folder' : null
 
   const buildRequest = (overwrite: SheetOverwrite): SheetGenerationRequest => ({
     templateId: template.id,
     outputDirectory: outputDir,
+    mode: settings.mode!,
     cardsPerSheet: settings.cardsPerSheet,
     sheetsPerFile: settings.sheetsPerFile,
     exportPdf: settings.exportPdf,
@@ -163,12 +166,14 @@ export function SheetGenerateScreen({ template, navigate }: { template: Template
                 value={blocking.length > 0 ? blocking[0]!.message : `${template.name} · ${sheet.cells.length} cards per sheet${issues.length ? ` · ${issues.length} note(s)` : ''}`}
                 action={<Button onClick={() => navigate('template')}>Review</Button>}
               />
+              <Check tone={missingFonts === null ? 'neutral' : missingFonts.length > 0 ? 'warn' : 'ok'} label="Fonts" value={missingFonts === null ? 'Checking…' : missingFonts.length > 0 ? `Not installed: ${missingFonts.join(', ')} — CorelDRAW will substitute` : 'All template fonts are installed'} />
               <Check tone={!corel ? 'neutral' : !corel.available ? 'error' : corel.isX7 ? 'ok' : 'warn'} label="CorelDRAW" value={!corel ? 'Checking…' : corel.available ? `${corel.progId}${corel.isX7 ? ' (X7)' : ' — not X7, validation pending'}` : corel.detail} />
             </ul>
           </Section>
 
           <Section title="Production">
             <div className="space-y-3">
+              <SheetModePicker value={settings.mode} onChange={(m) => setSettings({ mode: m })} cards={settings.cardsPerSheet} disabled={running} />
               <label className="block">
                 <span className="mb-1 block font-medium">Cards per sheet</span>
                 <select className="input w-full" value={settings.cardsPerSheet} onChange={(e) => setSettings({ cardsPerSheet: Number(e.target.value) })} disabled={running} data-testid="gen-cards-per-sheet">
@@ -193,13 +198,15 @@ export function SheetGenerateScreen({ template, navigate }: { template: Template
                 <input type="checkbox" className="check" checked={settings.clearEmpty} disabled={running} onChange={(e) => setSettings({ clearEmpty: e.target.checked })} />
                 Remove the artwork of unused card positions on the last sheet
               </label>
-              {plan && (
+              {plan && settings.mode && (
                 <div className="well p-3" aria-live="polite" data-testid="gen-plan">
                   <p className="font-semibold tabular-nums">
                     {eligible.length.toLocaleString()} records → {sheets.toLocaleString()} sheets → {plan.batches.length.toLocaleString()} file{plan.batches.length === 1 ? '' : 's'}
                   </p>
                   <p className="muted text-xs">
-                    {settings.cardsPerSheet} unique records per sheet{lastSheet && lastSheet.count < settings.cardsPerSheet ? `; the last sheet holds ${lastSheet.count}` : ''}. Each record appears exactly once.
+                    {settings.mode === 'copies'
+                      ? `${settings.cardsPerSheet} identical copies of each record on its own sheet. Each record appears on exactly one sheet.`
+                      : `${settings.cardsPerSheet} different records per sheet${lastSheet && lastSheet.count < settings.cardsPerSheet ? `; the last sheet holds ${lastSheet.count}` : ''}. Each record appears exactly once.`}
                   </p>
                 </div>
               )}

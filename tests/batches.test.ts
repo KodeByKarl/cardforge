@@ -48,6 +48,7 @@ describe('sheet generation request validation', () => {
   const base = {
     templateId: '11111111-1111-4111-8111-111111111111',
     outputDirectory: 'C:\\out',
+    mode: 'unique',
     cardsPerSheet: 10,
     sheetsPerFile: 25,
     exportPdf: false,

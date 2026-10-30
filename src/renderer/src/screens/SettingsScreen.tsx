@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState, type ReactNode } from 'react'
+import type { CompatReport } from '../../../shared/template/types'
 import type { AppInfo, AppSettings, CorelDetection, OverwritePolicy } from '../../../shared/types'
 import { api, errorMessage, unwrap } from '../api'
 import { Icon } from '../components/icons'
@@ -19,6 +20,8 @@ export function SettingsScreen() {
   const [error, setError] = useState<string | null>(null)
   const [pattern, setPattern] = useState('')
   const [margin, setMargin] = useState('')
+  const [compat, setCompat] = useState<CompatReport | null>(null)
+  const [compatBusy, setCompatBusy] = useState(false)
   const { preference, setPreference } = useTheme()
   const toast = useToast()
 
@@ -62,6 +65,18 @@ export function SettingsScreen() {
       if (dir) setSettings(await unwrap(api.settings.get()))
     } catch (err) {
       setError(errorMessage(err))
+    }
+  }
+
+  const runCompat = async () => {
+    setCompatBusy(true)
+    setCompat(null)
+    try {
+      setCompat(await unwrap(api.corel.compatibilityCheck()))
+    } catch (err) {
+      setError(errorMessage(err))
+    } finally {
+      setCompatBusy(false)
     }
   }
 
@@ -126,6 +141,34 @@ export function SettingsScreen() {
                   Rescan
                 </Button>
               </div>
+            </Row>
+          </Group>
+
+          <Group title="Compatibility check">
+            <Row label="CorelDRAW features" hint="Runs every CorelDRAW feature the card-sheet engine needs on a small built-in sample (no client data) and writes a report you can send back. Run this on the production PC with CorelDRAW X7 before real jobs.">
+              <Button onClick={runCompat} loading={compatBusy} data-testid="run-compat">
+                Run compatibility check
+              </Button>
+              {compat && (
+                <div className="mt-3" data-testid="compat-result">
+                  <Banner tone={compat.passed ? 'ok' : 'error'} title={compat.passed ? `All steps passed on ${compat.progId} ${compat.version}` : 'Some steps failed'}>
+                    {compat.isX7 ? 'CorelDRAW X7 detected.' : 'This is not CorelDRAW X7, so this result does not establish X7 compatibility.'}
+                    {compat.reportPath && <span className="mt-1 block break-all text-xs">Report: {compat.reportPath}</span>}
+                  </Banner>
+                  <ul className="mt-2 divide-y divide-line border-y border-line text-xs">
+                    {compat.steps.map((s) => (
+                      <li key={s.name} className="flex gap-2 py-1">
+                        <span className={`w-9 shrink-0 font-semibold ${s.ok ? 'text-ok' : 'text-err'}`}>{s.ok ? 'PASS' : 'FAIL'}</span>
+                        <span className="min-w-0 flex-1">
+                          {s.name}
+                          {s.detail && <span className="muted block break-words">{s.detail}</span>}
+                        </span>
+                        <span className="tabular-nums text-fg-muted">{s.ms} ms</span>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
             </Row>
           </Group>
 

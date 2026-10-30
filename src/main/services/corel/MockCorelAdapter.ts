@@ -115,6 +115,12 @@ export class MockCorelAdapter implements CorelAdapter {
     doc.path = path
   }
 
+  missingFonts: string[] = []
+  async checkFonts(fonts: string[]): Promise<string[]> {
+    this.check('checkFonts')
+    return fonts.filter((f) => this.missingFonts.includes(f))
+  }
+
   async exportPdf(handle: DocHandle, path: string): Promise<void> {
     this.check('exportPdf', path)
     this.doc(handle)

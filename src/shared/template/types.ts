@@ -229,3 +229,22 @@ export interface SheetPrepareResult {
   record: TemplateRecord
   assignments: NameAssignment[]
 }
+
+// ---- CorelDRAW compatibility check (run on the target PC, e.g. the client's X7) ----
+
+export interface CompatStep {
+  name: string
+  ok: boolean
+  ms: number
+  detail: string
+}
+
+export interface CompatReport {
+  when: string
+  version: string
+  progId: string
+  isX7: boolean
+  passed: boolean
+  steps: CompatStep[]
+  reportPath: string | null
+}

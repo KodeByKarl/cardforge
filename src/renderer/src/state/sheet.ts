@@ -1,4 +1,5 @@
-import { useMemo } from 'react'
+import { useEffect, useMemo, useState } from 'react'
+import { api, unwrap } from '../api'
 import { columnSamples } from '../../../shared/sheet/samples'
 import type { ImportRecord } from '../../../shared/types'
 import { useJob } from './job'
@@ -34,4 +35,22 @@ export function useSheetIssues(): { issues: SheetMappingIssue[]; blocking: boole
     const issues = sheetMappingIssues(selected.sheet, selected.sheetMapping ?? null, dataset.columns, samples)
     return { issues, blocking: hasBlockingSheetIssues(issues) }
   }, [selected, dataset, samples])
+}
+
+/** Template fonts that are not installed on this PC. null while unknown; CorelDRAW would substitute them silently. */
+export function useMissingFonts(templateId: string | undefined): string[] | null {
+  const [missing, setMissing] = useState<string[] | null>(null)
+  useEffect(() => {
+    setMissing(null)
+    if (!templateId) return
+    let stale = false
+    unwrap(api.templates.missingFonts(templateId)).then(
+      (m) => !stale && setMissing(m),
+      () => !stale && setMissing([])
+    )
+    return () => {
+      stale = true
+    }
+  }, [templateId])
+  return missing
 }

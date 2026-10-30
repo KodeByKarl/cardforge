@@ -35,6 +35,10 @@ Status: ✅ done and verified (on CorelDRAW v27 where CorelDRAW is involved) · 
 | F26 | Control-number prefix mismatch is flagged and blocks generation until confirmed; never converted | ✅ |
 | F27 | Unmapped data fields print blank, never the template's sample text | ✅ |
 | F28 | Client data protection: client files git-ignored and purged from local history; no contents in logs, reports, fixtures or docs | ✅ |
+| F29 | Two explicit production modes: N different records per sheet, or N copies of one record per sheet (each record on its own sheet). Chosen by the operator before preview/generation; never assumed; recorded in the print summary | ✅ |
+| F30 | Missing-font warning (CorelDRAW substitutes silently) on the mapping screen, Generate screen and report; text beyond its card position is flagged | ✅ (warning only; the real Gotham fonts are not installed on the dev PC) |
+| F31 | In-app CorelDRAW compatibility check (Settings) that exercises every CorelDRAW feature the sheet engine uses and writes a report, for validating X7 on the client's PC | ✅ on v27; **X7 not run** |
+| F32 | Windows installer (NSIS, unsigned) and packaged-app test | 🟡 built and tested on v27; not tested on a clean PC or X7 |
 
 ## Non-functional
 

@@ -6,7 +6,9 @@ import { X7_VERSION, detectCorelDraw } from './detect'
 import { PowerShellCorelAdapter } from './PowerShellCorelAdapter'
 
 /** Chooses X7 when registered, otherwise the newest installed CorelDRAW (development/testing on newer versions). */
-export function chooseProgId(progIds: string[]): string | null {
+export function chooseProgId(progIds: string[], override = process.env['CARDFORGE_COREL_PROGID']): string | null {
+  // CARDFORGE_COREL_PROGID (e.g. CorelDRAW.Application.27) forces one installed version, for testing on a PC that has several.
+  if (override && /^CorelDRAW\.Application\.\d+$/.test(override) && progIds.includes(override)) return override
   const x7 = `CorelDRAW.Application.${X7_VERSION}`
   if (progIds.includes(x7)) return x7
   const sorted = [...progIds].sort((a, b) => Number(a.split('.').pop()) - Number(b.split('.').pop()))

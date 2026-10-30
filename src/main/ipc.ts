@@ -1,9 +1,11 @@
+import { join } from 'node:path'
 import { BrowserWindow, app, dialog, ipcMain, shell, type IpcMainInvokeEvent } from 'electron'
 import { IPC, IPC_EVENTS } from '../shared/ipc'
 import type { IpcResult } from '../shared/types'
 import { AppError } from './errors'
 import { getLogDirectory, log } from './logger'
 import type { CorelService } from './services/corel/CorelService'
+import { runCompatibilityCheck } from './services/corel/CompatibilityCheck'
 import { detectCorelDraw } from './services/corel/detect'
 import { openWorkbook, readSheet } from './services/excel/excelReader'
 import type { GenerationService } from './services/generation/GenerationService'
@@ -107,6 +109,14 @@ export function registerIpc(services: Services): void {
     return detection
   })
   handle(IPC.corelStatus, () => corel.status())
+  handle(IPC.corelCompat, async () => {
+    assertIdle()
+    await preview.close(await corel.getAdapter())
+    const sample = app.isPackaged ? join(process.resourcesPath, 'samples', 'compat-sheet.cdr') : join(app.getAppPath(), 'resources', 'samples', 'compat-sheet.cdr')
+    const report = await runCompatibilityCheck(await corel.getAdapter(), sample, join(app.getPath('temp'), 'CardForge', 'compat'), join(app.getPath('userData'), 'reports'))
+    log.info('corel.compat', { passed: report.passed, version: report.version, failed: report.steps.filter((s) => !s.ok).map((s) => s.name) })
+    return report
+  })
 
   handle(IPC.templatesList, () => templates.list())
   handle(IPC.templatesGet, (_event, id) => templates.get(parseId(id)))
@@ -140,6 +150,7 @@ export function registerIpc(services: Services): void {
     return record
   })
   handle(IPC.templatesSaveSheetMapping, (_event, id, mapping) => templates.saveSheetMapping(parseId(id), mapping))
+  handle(IPC.templatesMissingFonts, (_event, id) => templates.missingFonts(parseId(id)))
   handle(IPC.templatesSourceStatus, (_event, id) => templates.sourceStatus(parseId(id)))
   handle(IPC.templatesPageImages, (_event, id) => templates.pageImages(parseId(id)))
 

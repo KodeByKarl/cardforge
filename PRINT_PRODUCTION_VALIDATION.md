@@ -16,6 +16,33 @@ CardForge never prints. The operator opens the generated CDR/PDF in CorelDRAW, r
 | Names | `<template> sheets 00001-00025.cdr` (+ `.pdf`) zero-padded so files sort in sheet order | unit test |
 | Reports | JSON report, manifest, and a plain-text print summary (file → sheets → spreadsheet rows → cards) | e2e; asserted to contain no spreadsheet contents |
 
+## Production modes (explicit, never assumed)
+
+| Mode | Sheet contents | Sheets for 40,897 records | Verified |
+|---|---|---|---|
+| 10 different records per sheet | records n..n+9 in reading order; last sheet partly filled (7 cards) | 4,090 | real client templates, synthetic data |
+| 10 copies of the same record per sheet | one record repeated in all 10 positions | 40,897 | real client templates, synthetic data |
+
+The mode must be chosen on the Card preview and Generate screens (nothing pre-selected), is stored with the template settings, and is printed in the print summary.
+
+## Verification against the client's own templates (CorelDRAW 27.2, synthetic records)
+
+| Check | `card layout final.cdr` | `guide (2).cdr` |
+|---|---|---|
+| Grid detected | 2 × 5 = 10, no warnings | 2 × 5 = 10, no warnings |
+| Record → card mapping (23 records, 3 sheets) read back from the saved CDR | exact | exact |
+| Page count; PDF page count | 2 + 1; 2 | 2 + 1; 2 |
+| Positions of the text objects vs the template | within 1 mm (left) / 2.5 mm (top) | within 1 mm / 2.5 mm |
+| No record skipped or duplicated | ✅ | ✅ |
+| Copies mode: identical cards per sheet, different record per sheet | ✅ | ✅ |
+| Copied page vs original client page (100 dpi) | 0 differing pixels | 0 differing pixels |
+| Filled sheet: differing pixels outside text areas | 0 | 0 |
+| Clipping / card-crossing warnings with typical values | 0 | 0 |
+| Fonts | Gotham not installed here: substituted, **warned** | same |
+| Original client file byte-identical afterwards | ✅ | ✅ |
+
+Not checked: how the real Gotham fonts render, how X7 renders either file, and a physical print.
+
 ## Operator checks before printing (recommended)
 
 1. Read the **print summary** and confirm the record count, sheet count and any excluded rows (rows with errors are listed by number).

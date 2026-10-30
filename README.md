@@ -58,6 +58,21 @@ npm run dev
 - **VS Code terminals** may set `ELECTRON_RUN_AS_NODE=1`; clear it before `npm run dev`.
 - `CARDFORGE_USER_DATA=<folder>` runs the app with a separate data folder (used for automated end-to-end runs).
 
+## Card sheets (multi-card A4 layouts)
+
+For a CDR whose text objects are unnamed and repeat on a page (the client's A4 2 × 5 layouts), Template setup detects the card grid, prepares a private copy (names the objects; the original file is never modified) and maps one reference card to spreadsheet columns. Before previewing or generating, choose the production mode explicitly: **N different records per sheet** or **N copies of one record per sheet**. Output is several sheets per CDR (default 25) plus an optional PDF per file, a manifest, a report and a print summary. See `CLIENT_WORKFLOW_ANALYSIS.md`, `LARGE_BATCH_TEST_REPORT.md`, `PRINT_PRODUCTION_VALIDATION.md` and `CLIENT_ACCEPTANCE_CHECKLIST.md`.
+
+## Windows installer
+
+```
+npm run build
+npx electron-builder --win nsis --x64
+```
+
+Output: `release/<version>/CardForge-Setup-<version>.exe` (NSIS, per-user, choose folder, desktop shortcut) and `release/<version>/win-unpacked/` (run `CardForge.exe` directly). The build is **unsigned**: Windows SmartScreen shows "Unknown publisher" and the user must choose "Run anyway". On Windows without Developer Mode, electron-builder cannot extract its code-signing tools (symbolic-link privilege); pass `CSC_IDENTITY_AUTO_DISCOVERY=false` and `-c.win.signAndEditExecutable=false` as above (the exe then keeps the default Electron icon and version resource). The packaged app bundles `resources/corel` (bridge script) and `resources/samples` (synthetic sample used by Settings → Run compatibility check). `exceljs` is bundled into the main process because electron-builder omitted a hoisted transitive dependency from `app.asar`, which crashed the first packaged build at start.
+
+Test the packaged app: `CARDFORGE_EXE=<path to CardForge.exe> node tests/e2e/sheet.mjs`.
+
 ## Preparing a template (designer)
 
 Name every variable text object in CorelDRAW's Object Manager (`FullName`, `JobTitle`, `Email`, …). Page 1 is the

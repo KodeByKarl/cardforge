@@ -121,6 +121,17 @@ await test('mapping: auto-match, prefix discrepancy blocks until the client conf
   await snap('template-mapped')
 })
 
+await test('production mode is never assumed: preview and generate wait for an explicit choice', async () => {
+  await nav('generate')
+  assert((await q('[data-testid=generate-button]', 'e => e.disabled')) === true, 'generate disabled without a mode')
+  assert(await app.eval("[...document.querySelectorAll('[data-testid^=mode-]')].every(r => !r.checked)"), 'no mode pre-selected')
+  assert((await text()).includes('Choose the production mode') || (await text()).includes('Choose a mode'), 'prompt shown')
+  await nav('preview')
+  assert(!!(await q('[data-testid=sheet-preview-choose-mode]', 'e => true')), 'preview asks for the mode')
+  await snap('mode-required')
+  await app.click('[data-testid=mode-unique]')
+})
+
 await test('sheet preview: A4 page rendered by CorelDRAW, 10 cards, correct aspect ratio, sheet 1 of 4,090', async () => {
   await nav('preview')
   await app.waitFor("!!document.querySelector('[data-testid=sheet-frame] img')", 120000, 'sheet image')
@@ -188,6 +199,9 @@ await test('generate: plan shows records, sheets and files; settings are validat
   await setInput('[data-testid=gen-sheets-per-file]', '50')
   assert((await q('[data-testid=gen-plan]', 'e => e.innerText')).replace(/\s+/g, ' ').includes('82 files'), '50 sheets per file -> 82 files')
   await setInput('[data-testid=gen-sheets-per-file]', '25')
+  await app.click('[data-testid=mode-copies]')
+  assert((await q('[data-testid=gen-plan]', 'e => e.innerText')).replace(/\s+/g, ' ').includes('40,897 records → 40,897 sheets → 1,636 files'), 'copies mode: one sheet per record')
+  await app.click('[data-testid=mode-unique]')
   assert(await q('[data-testid=generate-button]', 'e => e.disabled'), 'disabled until an output folder exists')
   await snap('generate-plan')
 })
@@ -245,6 +259,17 @@ await test('generate: running again offers Resume and keeps the finished files',
   await snap('generate-resume-dialog')
   await app.key('Escape')
   assert(!(await q('[role=dialog]', 'e => true')), 'Esc cancels without starting')
+})
+
+await test('settings: the CorelDRAW compatibility check passes every step and writes a report', async () => {
+  await nav('settings')
+  await app.click('[data-testid=run-compat]')
+  await app.waitFor("!!document.querySelector('[data-testid=compat-result]')", 240000, 'compat result')
+  const steps = await app.eval("[...document.querySelectorAll('[data-testid=compat-result] li')].map(l => l.innerText.split('\\n')[0])")
+  assert(steps.length >= 12, `steps: ${steps.length}`)
+  assert(steps.every((l) => l.startsWith('PASS')), 'failed steps: ' + steps.filter((l) => !l.startsWith('PASS')).join(' | '))
+  assert((await q('[data-testid=compat-result]', 'e => e.innerText')).includes('Report:'), 'report path shown')
+  await snap('compat-check')
 })
 
 // ---- Responsive layout of the sheet screens ----

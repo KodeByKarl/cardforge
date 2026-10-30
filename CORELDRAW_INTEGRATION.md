@@ -145,3 +145,14 @@ Does `ExportArea` behave the same? Does X7's edition/licence allow COM automatio
 * **Output files.** `SaveAs` with `Version = 17` produces a ZIP container (`PK`), used as a cheap validity signature. `Document.PublishToPDF(path)` writes all pages (10 pages ≈ 0.9 s).
 * **Fonts.** The real layouts use Arial, Segoe Print and Gotham. If a font is missing CorelDRAW substitutes silently; this is not detected by CardForge and must be checked on the production PC.
 * **X7.** `Layer.IsGuidesLayer`, `ShapeRange.CopyToLayer`, `Page.FindShape` with four arguments, `Application.Optimization` and `Document.PublishToPDF` are used. Their presence and behaviour in X7 are **unverified**; validate with `npm run test:corel` and the sheet e2e on the client's PC.
+
+## 11. Bridge defect and font findings from the real templates
+
+* **HRESULT cast crashed the bridge.** `Error-Code` cast `COMException.ErrorCode` (a negative Int32, e.g. E_FAIL = -2147467259) to `UInt32`, which throws inside the error handler and terminated PowerShell (exit code 1). Any unlisted COM error therefore killed the bridge instead of being reported. Fixed by switching on the Int32 value. (Found while running the real templates; the original error itself was a test-harness blanking of a caption group.)
+* **Silent font substitution.** With Gotham not installed, `Story.Text = ...` keeps the reported font name for some objects and switches others to a fallback (observed: Gotham Medium → Segoe Print). CorelDRAW gives no automation error. `checkFonts` compares the template's font names with the installed Windows font families and CardForge warns; it cannot prove what CorelDRAW will pick.
+* **Caption groups.** Setting the text of a caption inside a group to empty in an undo group raised E_FAIL in one harness path; production fills use `keep` mode and never touch captions except to blank them in empty positions (verified).
+* `Page.Shapes.All()` + `Duplicate`/`MoveToLayer` copied only guidelines on the real file; per-layer `CopyToLayer` is used (see §10).
+
+## 12. X7 results (17.4.0.887, evaluation build on the dev PC)
+
+All 15 compatibility steps and the essential workflow on both client templates passed (see TEST_REPORT.md, "CorelDRAW X7 targeted test"). The APIs listed in §10 (`Layer.IsGuidesLayer`, `ShapeRange.CopyToLayer`, `Page.FindShape` with four arguments, `Application.Optimization`, `Document.PublishToPDF`) all work on X7. The 32-bit X7 server is reached from 64-bit Windows PowerShell through out-of-process COM without changes. Only an evaluation (not licensed) build and no print were available.
