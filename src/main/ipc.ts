@@ -11,6 +11,9 @@ import { openWorkbook, readSheet } from './services/excel/excelReader'
 import type { GenerationService } from './services/generation/GenerationService'
 import type { SheetGenerationService } from './services/generation/SheetGenerationService'
 import type { JobHistory } from './services/generation/JobHistory'
+import type { PresetStore } from './services/print/PresetStore'
+import type { PrintService } from './services/print/PrintService'
+import type { PrinterApi } from './services/print/PrinterService'
 import type { PreviewService } from './services/preview/PreviewService'
 import type { TemplateStore } from './services/templates/TemplateStore'
 import type { SettingsStore } from './settings'
@@ -26,6 +29,9 @@ export interface Services {
   generation: GenerationService
   sheetGeneration: SheetGenerationService
   history: JobHistory
+  print: PrintService
+  printers: PrinterApi
+  presets: PresetStore
 }
 
 /** Only frames loaded from our own bundle (or the dev server) may call IPC. */
@@ -66,7 +72,7 @@ async function openPath(path: string): Promise<void> {
 }
 
 export function registerIpc(services: Services): void {
-  const { settings, corel, templates, preview, generation, sheetGeneration, history } = services
+  const { settings, corel, templates, preview, generation, sheetGeneration, history, print, printers, presets } = services
   const assertIdle = () => {
     if (generation.activeJobId || sheetGeneration.activeJobId) throw new AppError('JOB_RUNNING', 'A generation job is already running. Wait for it to finish or cancel it.')
   }
@@ -183,6 +189,23 @@ export function registerIpc(services: Services): void {
     if (!file) throw new AppError('FILE_NOT_FOUND', 'That generated file is not in the job history.')
     await openPath(file)
   })
+
+  handle(IPC.printPrinters, () => printers.list())
+  handle(IPC.printSource, (_event, id) => print.source(parseId(id, 'job id')))
+  handle(IPC.printPlan, (_event, request) => print.plan(request))
+  handle(IPC.printStart, async (_event, request) => {
+    const job = await print.start(request)
+    log.info('print.started', { jobId: job.id, printer: job.settings.printer, sheets: job.sheets.length, copies: job.settings.copies, pages: job.estimatedPages })
+    return job
+  })
+  handle(IPC.printCancel, (_event, id) => print.cancel(id))
+  handle(IPC.printRetry, (_event, id) => print.retryFailed(id))
+  handle(IPC.printHistory, () => print.history())
+  handle(IPC.printPreview, (_event, id, index) => print.preview(parseId(id, 'job id'), index))
+  handle(IPC.printPresets, () => presets.list())
+  handle(IPC.printSavePreset, (_event, name, settings) => presets.saveAs(name, settings))
+  handle(IPC.printRemovePreset, (_event, id) => presets.remove(id))
+  handle(IPC.printRemember, (_event, settings) => presets.remember(settings))
 
   handle(IPC.appInfo, async () => ({
     appVersion: app.getVersion(),

@@ -1,3 +1,4 @@
+import type { PrintJobRecord, PrintPlan, PrintPlanRequest, PrintPreset, PrintPreview, PrintSettings, PrintSource, PrintStartRequest, PrinterInfo } from './print/types'
 import type { DetectionOptions, DetectionResult, SheetGenerationPlan, SheetGenerationRequest, SheetMapping } from './sheet/types'
 import type {
   CompatReport,
@@ -51,6 +52,18 @@ export const IPC = {
   generationHistory: 'generation:history',
   generationOpenFolder: 'generation:openFolder',
   generationOpenFile: 'generation:openFile',
+  printPrinters: 'print:printers',
+  printSource: 'print:source',
+  printPlan: 'print:plan',
+  printStart: 'print:start',
+  printCancel: 'print:cancel',
+  printRetry: 'print:retry',
+  printHistory: 'print:history',
+  printPreview: 'print:preview',
+  printPresets: 'print:presets',
+  printSavePreset: 'print:savePreset',
+  printRemovePreset: 'print:removePreset',
+  printRemember: 'print:remember',
   appInfo: 'app:info',
   appOpenLogs: 'app:openLogs'
 } as const
@@ -58,7 +71,8 @@ export const IPC = {
 /** Main → renderer push events. */
 export const IPC_EVENTS = {
   generationProgress: 'generation:progress',
-  excelProgress: 'excel:progress'
+  excelProgress: 'excel:progress',
+  printProgress: 'print:progress'
 } as const
 
 /** API exposed on window.cardforge by the preload script. */
@@ -121,6 +135,26 @@ export interface CardForgeApi {
   sheets: {
     plan(request: SheetGenerationRequest): Promise<IpcResult<SheetGenerationPlan>>
     start(request: SheetGenerationRequest): Promise<IpcResult<{ jobId: string }>>
+  }
+  /** Direct printing of generated CDR files through CorelDRAW. Every payload is validated in the main process. */
+  print: {
+    printers(): Promise<IpcResult<PrinterInfo[]>>
+    /** The CDR files of a finished generation job (no paths cross the bridge, only indexes). */
+    source(sourceJobId: string): Promise<IpcResult<PrintSource>>
+    /** Computes what would be printed (page counts, total sheets, blockers). Sends nothing. */
+    plan(request: PrintPlanRequest): Promise<IpcResult<PrintPlan>>
+    /** Starts the job for a plan the operator confirmed. */
+    start(request: PrintStartRequest): Promise<IpcResult<PrintJobRecord>>
+    cancel(jobId: string): Promise<IpcResult<PrintJobRecord>>
+    /** Re-sends only files that certainly never reached the printer. */
+    retryFailed(jobId: string): Promise<IpcResult<PrintJobRecord>>
+    history(): Promise<IpcResult<PrintJobRecord[]>>
+    preview(sourceJobId: string, fileIndex: number): Promise<IpcResult<PrintPreview>>
+    presets(): Promise<IpcResult<{ presets: PrintPreset[]; last: PrintSettings | null }>>
+    savePreset(name: string, settings: PrintSettings): Promise<IpcResult<PrintPreset>>
+    removePreset(id: string): Promise<IpcResult<void>>
+    remember(settings: PrintSettings): Promise<IpcResult<void>>
+    onProgress(listener: (job: PrintJobRecord) => void): () => void
   }
   app: {
     info(): Promise<IpcResult<AppInfo>>

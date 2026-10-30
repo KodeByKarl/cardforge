@@ -7,6 +7,9 @@ import { CorelService } from './services/corel/CorelService'
 import { GenerationService } from './services/generation/GenerationService'
 import { SheetGenerationService } from './services/generation/SheetGenerationService'
 import { JobHistory } from './services/generation/JobHistory'
+import { PresetStore } from './services/print/PresetStore'
+import { PrintService } from './services/print/PrintService'
+import { PrinterService } from './services/print/PrinterService'
 import { PreviewService } from './services/preview/PreviewService'
 import { TemplateStore } from './services/templates/TemplateStore'
 import { SettingsStore } from './settings'
@@ -21,9 +24,10 @@ function createWindow(): BrowserWindow {
     minWidth: Math.min(800, work.width),
     minHeight: Math.min(480, work.height),
     show: false,
-    title: 'CardForge',
+    title: '1st of June',
+    icon: join(app.isPackaged ? process.resourcesPath : join(app.getAppPath(), 'resources'), 'icon.png'),
     autoHideMenuBar: true,
-    backgroundColor: nativeTheme.shouldUseDarkColors ? '#161614' : '#f4f3f0',
+    backgroundColor: nativeTheme.shouldUseDarkColors ? '#0f1814' : '#f5f7f6',
     webPreferences: {
       preload: join(__dirname, '../preload/index.js'),
       contextIsolation: true,
@@ -50,6 +54,10 @@ function createWindow(): BrowserWindow {
 }
 
 /** The bridge script must live outside app.asar: powershell.exe cannot read files inside the archive. */
+function resourceScript(name: string): string {
+  return app.isPackaged ? join(process.resourcesPath, 'corel', name) : join(app.getAppPath(), 'resources', 'corel', name)
+}
+
 function bridgeScriptPath(): string {
   return app.isPackaged ? join(process.resourcesPath, 'corel', 'corel-bridge.ps1') : join(app.getAppPath(), 'resources', 'corel', 'corel-bridge.ps1')
 }
@@ -68,7 +76,7 @@ if (!app.requestSingleInstanceLock()) {
     }
   })
 
-  let services: { corel: CorelService; preview: PreviewService; generation: GenerationService; sheetGeneration: SheetGenerationService } | null = null
+  let services: { corel: CorelService; preview: PreviewService; generation: GenerationService; sheetGeneration: SheetGenerationService; print: PrintService } | null = null
 
   void app.whenReady().then(async () => {
     const userData = app.getPath('userData')
@@ -100,8 +108,21 @@ if (!app.requestSingleInstanceLock()) {
         for (const win of BrowserWindow.getAllWindows()) win.webContents.send(IPC_EVENTS.generationProgress, progress)
       }
     })
-    services = { corel, preview, generation, sheetGeneration }
-    registerIpc({ settings, corel, templates, preview, generation, sheetGeneration, history })
+    const printers = new PrinterService(resourceScript('printers.ps1'))
+    const presets = new PresetStore(join(userData, 'print-presets.json'))
+    const print = new PrintService({
+      historyFile: join(userData, 'print-jobs.json'),
+      previewDir: join(app.getPath('temp'), 'CardForge', 'print-preview'),
+      getAdapter,
+      printers,
+      sources: history,
+      corelVersion: () => corel.version,
+      onChange: (job) => {
+        for (const win of BrowserWindow.getAllWindows()) win.webContents.send(IPC_EVENTS.printProgress, job)
+      }
+    })
+    services = { corel, preview, generation, sheetGeneration, print }
+    registerIpc({ settings, corel, templates, preview, generation, sheetGeneration, history, print, printers, presets })
     createWindow()
   })
 
@@ -117,6 +138,7 @@ if (!app.requestSingleInstanceLock()) {
       if (running) s.generation.cancel(running)
       const sheetRunning = s.sheetGeneration.activeJobId
       if (sheetRunning) s.sheetGeneration.cancel(sheetRunning)
+      await s.print.waitForIdle()
       await s.generation.waitForIdle()
       await s.sheetGeneration.waitForIdle()
       await s.preview.close()

@@ -1,5 +1,6 @@
 import { contextBridge, ipcRenderer, webUtils } from 'electron'
 import { IPC, IPC_EVENTS, type CardForgeApi } from '../shared/ipc'
+import type { PrintJobRecord } from '../shared/print/types'
 import type { JobProgress } from '../shared/template/types'
 import type { ImportProgress } from '../shared/types'
 
@@ -64,6 +65,25 @@ const api: CardForgeApi = {
   sheets: {
     plan: (request) => ipcRenderer.invoke(IPC.sheetsPlan, request),
     start: (request) => ipcRenderer.invoke(IPC.sheetsStart, request)
+  },
+  print: {
+    printers: () => ipcRenderer.invoke(IPC.printPrinters),
+    source: (sourceJobId) => ipcRenderer.invoke(IPC.printSource, sourceJobId),
+    plan: (request) => ipcRenderer.invoke(IPC.printPlan, request),
+    start: (request) => ipcRenderer.invoke(IPC.printStart, request),
+    cancel: (jobId) => ipcRenderer.invoke(IPC.printCancel, jobId),
+    retryFailed: (jobId) => ipcRenderer.invoke(IPC.printRetry, jobId),
+    history: () => ipcRenderer.invoke(IPC.printHistory),
+    preview: (sourceJobId, fileIndex) => ipcRenderer.invoke(IPC.printPreview, sourceJobId, fileIndex),
+    presets: () => ipcRenderer.invoke(IPC.printPresets),
+    savePreset: (name, settings) => ipcRenderer.invoke(IPC.printSavePreset, name, settings),
+    removePreset: (id) => ipcRenderer.invoke(IPC.printRemovePreset, id),
+    remember: (settings) => ipcRenderer.invoke(IPC.printRemember, settings),
+    onProgress: (listener) => {
+      const handler = (_event: Electron.IpcRendererEvent, job: PrintJobRecord) => listener(job)
+      ipcRenderer.on(IPC_EVENTS.printProgress, handler)
+      return () => ipcRenderer.removeListener(IPC_EVENTS.printProgress, handler)
+    }
   },
   app: {
     info: () => ipcRenderer.invoke(IPC.appInfo),

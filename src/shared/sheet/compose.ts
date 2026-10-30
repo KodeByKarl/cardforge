@@ -231,7 +231,7 @@ export function sheetMappingIssues(config: SheetConfig, mapping: SheetMapping | 
               severity: 'error',
               code: 'PREFIX_UNCONFIRMED',
               roleId: role.id,
-              message: `The template sample uses the prefix “${d.template}” but the spreadsheet uses ${d.data.map((p) => `“${p}”`).join(', ')}. CardForge does not convert prefixes. Confirm the correct one with the client.`
+              message: `The template sample uses the prefix “${d.template}” but the spreadsheet uses ${d.data.map((p) => `“${p}”`).join(', ')}. The system does not convert prefixes. Confirm the correct one with the client.`
             })
           }
         }

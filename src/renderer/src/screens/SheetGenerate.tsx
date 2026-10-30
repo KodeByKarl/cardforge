@@ -11,6 +11,7 @@ import { Banner, Button, Dialog, EmptyState, PageHeader, Section, useToast } fro
 import { X7Notice } from '../components/X7Notice'
 import { useCorelStatus } from '../state/corel'
 import { useGeneration } from '../state/generation'
+import { usePrint } from '../state/print'
 import { useMissingFonts, useSheetData } from '../state/sheet'
 import { useSheetSettings } from '../state/sheetSettings'
 import { useTemplates } from '../state/templates'
@@ -32,6 +33,7 @@ export function SheetGenerateScreen({ template, navigate }: { template: Template
   const { issues } = useTemplates()
   const { status: corel } = useCorelStatus()
   const generation = useGeneration()
+  const print = usePrint()
   const toast = useToast()
   const [settings, setSettings] = useSheetSettings(template)
   const missingFonts = useMissingFonts(template.id)
@@ -228,7 +230,7 @@ export function SheetGenerateScreen({ template, navigate }: { template: Template
                 </div>
               </div>
               <p className="muted text-xs">
-                Files are named “{template.name} sheets 00001-00025.cdr” and saved in CorelDRAW X7 (v17) format. A manifest, a report and a print summary are written next to them. CardForge never sends anything to a printer.
+                Files are named “{template.name} sheets 00001-00025.cdr” and saved in CorelDRAW X7 (v17) format. A manifest, a report and a print summary are written next to them. This system never sends anything to a printer.
                 {app && ` Existing files are handled when you start (resume, skip, keep both or overwrite).`}
               </p>
               <X7Notice version={corel?.isX7 ? 'Version 17' : (template.inspection.corelVersion ?? null)} compact />
@@ -245,7 +247,7 @@ export function SheetGenerateScreen({ template, navigate }: { template: Template
               {eta !== null && <p className="-mt-2 mb-2 text-xs text-fg-muted">About {duration(eta)} remaining (based on the speed so far).</p>}
               {!running && lastJob && (
                 <>
-                  <Completion job={lastJob} />
+                  <Completion job={lastJob} onPrint={() => { print.selectSource(lastJob.id); navigate('print') }} />
                   {lastJob.sheetJob && (
                     <div className="mb-3 shrink-0 space-y-1" data-testid="verification">
                       {lastJob.sheetJob.verification.map((v, i) => (

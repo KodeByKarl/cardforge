@@ -23,7 +23,7 @@ export class CorelService {
 
   constructor(
     private readonly scriptPath: string,
-    private readonly createAdapter: (progId: string, scriptPath: string) => CorelAdapter = (p, s) => new PowerShellCorelAdapter(p, s)
+    private readonly createAdapter: (progId: string, scriptPath: string, x86: boolean) => CorelAdapter = (p, s, x86) => new PowerShellCorelAdapter(p, s, undefined, x86)
   ) {}
 
   async status(): Promise<CorelStatus> {
@@ -54,7 +54,7 @@ export class CorelService {
     const detection = await detectCorelDraw()
     const progId = chooseProgId(detection.progIds)
     if (!progId) throw new AppError('COREL_NOT_INSTALLED', 'CorelDRAW was not found on this computer. Template inspection, preview and generation need CorelDRAW.')
-    const adapter = this.createAdapter(progId, this.scriptPath)
+    const adapter = this.createAdapter(progId, this.scriptPath, detection.x86ProgIds.includes(progId))
     this.connection = await adapter.connect()
     this.adapter = adapter
     log.info('corel.connected', { progId, version: this.connection.version, x7: progId.endsWith(`.${X7_VERSION}`) })

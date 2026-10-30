@@ -145,7 +145,7 @@ export async function runCompatibilityCheck(adapter: CorelAdapter, samplePath: s
       await mkdir(reportDir, { recursive: true })
       const path = join(reportDir, `cardforge-compatibility-${report.when.replace(/[-:]/g, '').slice(0, 15)}.txt`)
       const lines = [
-        'CardForge CorelDRAW compatibility check',
+        '1st of June CorelDRAW compatibility check',
         `Date: ${report.when}`,
         `CorelDRAW: ${progId || 'not available'} ${version}${report.isX7 ? ' (X7)' : ''}`,
         `Result: ${passed ? 'ALL STEPS PASSED' : 'FAILED'}`,

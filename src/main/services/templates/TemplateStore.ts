@@ -4,6 +4,7 @@ import { copyFile, mkdir, readdir, rename, rm, stat } from 'node:fs/promises'
 import { basename, extname, join, resolve, sep } from 'node:path'
 import { parseSheetMapping } from '../../../shared/sheet/compose'
 import { detectSheetGrid } from '../../../shared/sheet/detect'
+import { detectNamedSheet } from '../../../shared/sheet/namedCards'
 import type { DetectionOptions, DetectionResult } from '../../../shared/sheet/types'
 import { parseSavedMapping } from '../../../shared/template/mapping'
 import type { TemplateInspection, TemplateRecord, TemplateSourceStatus, TemplateSummary } from '../../../shared/template/types'
@@ -94,7 +95,10 @@ export class TemplateStore {
     const existing = (await this.list()).find((t) => t.sourcePath.toLowerCase() === source.toLowerCase())
     if (existing) {
       const record = await this.get(existing.id)
-      if (record.sourceHash === sourceHash) return record
+      if (record.sourceHash === sourceHash) {
+        const withSheet = this.withNamedSheet(record)
+        return withSheet === record ? record : this.write(withSheet)
+      }
     }
 
     const id = randomUUID()
@@ -123,13 +127,26 @@ export class TemplateStore {
       }
       // The original must be untouched by import (it is only ever read).
       if ((await sha256File(source)) !== sourceHash) log.warn('templates.source_changed_during_import', { source })
-      await writeJsonAtomic(join(dir, META_FILE), record)
+      const withSheet = this.withNamedSheet(record)
+      await writeJsonAtomic(join(dir, META_FILE), withSheet)
       log.info('templates.imported', { id, source, pages: inspection.pages.length, objects: inspection.objects.length })
-      return record
+      return withSheet
     } catch (err) {
       await rm(dir, { recursive: true, force: true })
       throw err
     }
+  }
+
+  /**
+   * A template whose text objects are already named per card (card01_FullName, card02_FullName, ...) is a card sheet as
+   * it stands: the sheet configuration is derived from the names and nothing in the file is renamed.
+   */
+  private withNamedSheet(record: TemplateRecord): TemplateRecord {
+    if (record.sheet) return record
+    const page = record.inspection.pages[0]
+    const sheet = detectNamedSheet(record.inspection.objects, page)
+    if (!sheet) return record
+    return { ...record, sheet, sheetMapping: null }
   }
 
   private async inspectLibraryCopy(id: string): Promise<TemplateInspection> {

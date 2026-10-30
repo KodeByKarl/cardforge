@@ -521,6 +521,66 @@ function Cmd-SaveAs($a) {
   return @{ path = [string]$a.path }
 }
 
+# ---- Printing ----
+# Enum values come from the CorelDRAW X7 type library (CorelDRAW.tlb, Prn* enums), checked against v27.2 as well.
+$prnPaperSize = @{ Letter = 1; Legal = 5; A3 = 8; A4 = 9; A5 = 11 }
+$prnOrientation = @{ portrait = 1; landscape = 2 }
+$prnColorMode = @{ color = 0; grayscale = 1; black = 2 }
+
+# Runs a print-setup step. A COM failure becomes a specific error: the print module of some installs cannot be
+# initialised at all (HRESULT 0x80030002 on PrintSettings), and that must not look like a generic failure.
+function Invoke-PrintStep([string]$what, [scriptblock]$step) {
+  try { & $step } catch {
+    $ex = $_.Exception
+    if ($ex.Data.Contains('code')) { throw }
+    $hr = ''
+    $inner = $ex
+    while ($inner) { if ($inner -is [System.Runtime.InteropServices.COMException]) { $hr = ' (HRESULT 0x{0:X8})' -f [int]$inner.ErrorCode; break }; $inner = $inner.InnerException }
+    Fail 'PRINT_SETUP_FAILED' ("CorelDRAW could not set up printing: $what failed$hr. " + $ex.Message)
+  }
+}
+
+# Applies the printer and settings to the document. Nothing is printed here. The printer is never substituted:
+# if CorelDRAW does not report the requested printer as selected afterwards, this fails.
+function Cmd-ConfigurePrint($a) {
+  $d = Get-Doc ([string]$a.handle)
+  $s = $a.settings
+  $name = [string]$s.printer
+  if ($name -eq '' -or $name -match '[\x00-\x1f]') { Fail 'INVALID_ARGS' 'A printer name is required.' }
+  if (-not $prnPaperSize.ContainsKey([string]$s.paper)) { Fail 'INVALID_ARGS' "Unsupported paper size '$($s.paper)'." }
+  if (-not $prnOrientation.ContainsKey([string]$s.orientation)) { Fail 'INVALID_ARGS' 'Unsupported orientation.' }
+  if (-not $prnColorMode.ContainsKey([string]$s.color)) { Fail 'INVALID_ARGS' 'Unsupported color mode.' }
+  $copies = [int]$s.copies
+  if ($copies -lt 1 -or $copies -gt 99) { Fail 'INVALID_ARGS' 'Copies must be 1 to 99.' }
+  Revert-Record $d
+  $ps = $null
+  Invoke-PrintStep 'opening the print settings' { $script:ps = $d.doc.PrintSettings; [void]$script:ps.Copies }
+  $ps = $script:ps
+  Invoke-PrintStep "selecting printer '$name'" { $ps.SelectPrinter($name) }
+  $selected = ''
+  Invoke-PrintStep 'reading the selected printer' { $script:selected = [string]$ps.Printer.Name }
+  if ($script:selected -ne $name) { Fail 'PRINTER_NOT_SELECTED' "CorelDRAW selected '$($script:selected)' instead of '$name'. Nothing was printed." }
+  Invoke-PrintStep 'setting copies' { $ps.Copies = $copies; $ps.Collate = $true }
+  Invoke-PrintStep 'setting paper size' { $ps.SetPaperSize([int]$prnPaperSize[[string]$s.paper], [int]$prnOrientation[[string]$s.orientation]) }
+  $range = ([string]$s.pageRange).Trim()
+  Invoke-PrintStep 'setting the page range' {
+    if ($range -eq '') { $ps.PrintRange = 0 } else { $ps.PageRange = $range; $ps.PrintRange = 3 }
+  }
+  Invoke-PrintStep 'setting scaling' { $ps.Layout.Placement = $(if ([string]$s.scaling -eq 'fitToPage') { 1 } else { 0 }) }
+  Invoke-PrintStep 'setting the color mode' { $ps.Options.ColorMode = [int]$prnColorMode[[string]$s.color] }
+  $d.printReady = $true
+  return @{ configured = $true; printer = $name; copies = [int]$ps.Copies }
+}
+
+# Sends the document to the printer. Only valid right after Cmd-ConfigurePrint on the same document.
+function Cmd-PrintOut($a) {
+  $d = Get-Doc ([string]$a.handle)
+  if (-not $d.ContainsKey('printReady') -or -not $d.printReady) { Fail 'PRINT_NOT_CONFIGURED' 'configurePrint must succeed before printOut.' }
+  $d.printReady = $false
+  $d.doc.PrintOut()
+  return @{ submitted = $true }
+}
+
 function Cleanup {
   foreach ($h in @($script:docs.Keys)) { Cmd-CloseDoc @{ handle = $h } | Out-Null }
   if ($script:app -and $script:startedApp) {
@@ -544,6 +604,8 @@ function Invoke-Request([string]$cmd, $a) {
     'exportPages' { return Cmd-ExportPages $a }
     'saveAs' { return Cmd-SaveAs $a }
     'exportPdf' { return Cmd-ExportPdf $a }
+    'configurePrint' { return Cmd-ConfigurePrint $a }
+    'printOut' { return Cmd-PrintOut $a }
     'shutdown' { Cleanup; return @{ bye = $true } }
     default { Fail 'UNKNOWN_COMMAND' "Unknown command '$cmd'." }
   }

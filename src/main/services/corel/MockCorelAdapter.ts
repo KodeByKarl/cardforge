@@ -1,5 +1,6 @@
 import { writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
+import type { PrintSettings } from '../../../shared/print/types'
 import type { NameAssignment } from '../../../shared/sheet/types'
 import type { ApplyResult, ExportedPage, ShapeValues, TemplateInspection } from '../../../shared/template/types'
 import { AppError } from '../../errors'
@@ -125,6 +126,24 @@ export class MockCorelAdapter implements CorelAdapter {
     this.check('exportPdf', path)
     this.doc(handle)
     await writeFile(path, '%PDF-1.7 mock', 'utf8')
+  }
+
+  /** Settings applied by configurePrint and the PrintOut submissions, newest last (print tests). */
+  readonly printed: { path: string; settings: PrintSettings }[] = []
+  private readonly configured = new Map<DocHandle, PrintSettings>()
+
+  async configurePrint(handle: DocHandle, settings: PrintSettings): Promise<void> {
+    this.check('configurePrint', settings.printer)
+    this.doc(handle)
+    this.configured.set(handle, settings)
+  }
+
+  async printOut(handle: DocHandle): Promise<void> {
+    const doc = this.doc(handle)
+    const settings = this.configured.get(handle)
+    if (!settings) throw new AppError('PRINT_NOT_CONFIGURED', 'configurePrint must be called first.')
+    this.check('printOut', doc.path)
+    this.printed.push({ path: doc.path, settings })
   }
 
   async dispose(): Promise<void> {

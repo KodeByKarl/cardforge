@@ -21,7 +21,7 @@ export function SheetModePicker({ value, onChange, cards, disabled }: { value: S
           </label>
         ))}
       </div>
-      {value === null && <p className="mt-1 text-xs text-warn">Choose a mode. CardForge never assumes one.</p>}
+      {value === null && <p className="mt-1 text-xs text-warn">Choose a mode. This system never assumes one.</p>}
     </fieldset>
   )
 }

@@ -80,7 +80,7 @@ export function SheetPrepare({ record, onAnalysis, onPrepared }: { record: Templ
     <section className="flex min-h-0 flex-1 flex-col overflow-y-auto p-4" aria-label="Prepare card sheet" data-testid="sheet-prepare">
       <h3 className="text-base">This template has {record.inspection.unnamedTextCount} unnamed text objects</h3>
       <p className="muted mt-1">
-        If the page holds several cards, CardForge can find the repeated card positions and fill each one with a different record. Your original file is never modified: CardForge names the objects in its own private copy.
+        If the page holds several cards, The system can find the repeated card positions and fill each one with a different record. Your original file is never modified: it names the objects in its own private copy.
       </p>
       {error && (
         <div className="mt-3">
@@ -295,7 +295,7 @@ export function SheetMappingEditor({ record, onHighlight, onError, onChanged }: 
               checked={mapping.acknowledged.includes('prefix')}
               onChange={(e) => persist({ ...mapping, acknowledged: e.target.checked ? [...new Set([...mapping.acknowledged, 'prefix'])] : mapping.acknowledged.filter((a) => a !== 'prefix') })}
             />
-            The client confirmed the control-number prefix used in the spreadsheet is correct. CardForge prints the spreadsheet value as is.
+            The client confirmed the control-number prefix used in the spreadsheet is correct. The system prints the spreadsheet value as is.
           </label>
         )}
         {missingFonts && missingFonts.length > 0 && (

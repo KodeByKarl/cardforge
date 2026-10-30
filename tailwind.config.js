@@ -15,8 +15,8 @@ module.exports = {
       lg: ['16px', '22px'],
       xl: ['20px', '26px']
     },
-    // Small, sharp radii: this is a tool, not a marketing page.
-    borderRadius: { none: '0', sm: '2px', DEFAULT: '3px', md: '4px', lg: '6px', full: '9999px' },
+    // One radius scale: 4 (badges) / 6 (controls) / 8 (panels) / 12 (dialogs).
+    borderRadius: { none: '0', sm: '4px', DEFAULT: '6px', md: '8px', lg: '12px', full: '9999px' },
     colors: {
       transparent: 'transparent',
       current: 'currentColor',
@@ -34,6 +34,14 @@ module.exports = {
       fg: token('fg'),
       'fg-muted': token('fg-muted'),
       'fg-subtle': token('fg-subtle'),
+      secondary: token('secondary'),
+      brand: token('brand'),
+      sidebar: token('sidebar'),
+      'sidebar-hover': token('sidebar-hover'),
+      'sidebar-active': token('sidebar-active'),
+      'sidebar-line': token('sidebar-line'),
+      'sidebar-fg': token('sidebar-fg'),
+      'sidebar-muted': token('sidebar-muted'),
       accent: token('accent'),
       'accent-hover': token('accent-hover'),
       'accent-fg': token('accent-fg'),
@@ -47,14 +55,14 @@ module.exports = {
     },
     extend: {
       fontFamily: {
-        sans: ['"Segoe UI Variable Text"', '"Segoe UI"', 'system-ui', 'sans-serif'],
+        sans: ['Inter', '"Segoe UI Variable Text"', '"Segoe UI"', 'system-ui', 'sans-serif'],
         mono: ['"Cascadia Mono"', 'Consolas', 'monospace']
       },
       // Fixed component dimensions.
       spacing: { control: '28px', 'control-lg': '36px', header: '44px', status: '24px', rail: '208px', 'rail-compact': '48px' },
       boxShadow: {
-        card: '0 1px 2px rgb(0 0 0 / 0.28), 0 0 0 1px rgb(0 0 0 / 0.08)',
-        pop: '0 8px 24px rgb(0 0 0 / 0.22), 0 0 0 1px rgb(var(--line-strong))'
+        card: '0 1px 2px rgb(23 43 36 / 0.10), 0 0 0 1px rgb(var(--line))',
+        pop: '0 8px 24px rgb(23 43 36 / 0.16), 0 0 0 1px rgb(var(--line-strong))'
       },
       screens: {
         // Desktop breakpoints on the CSS viewport (window width / display scaling), not device classes.

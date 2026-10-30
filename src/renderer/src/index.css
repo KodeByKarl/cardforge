@@ -10,54 +10,72 @@
  */
 :root {
   color-scheme: light;
-  --bg: 244 243 240;
+  --bg: 245 247 246; /* #F5F7F6 */
   --surface: 255 255 255;
-  --surface-2: 249 248 246;
-  --rail: 236 235 231;
-  --canvas: 208 206 200;
+  --surface-2: 239 244 241;
+  --rail: 255 255 255; /* header and status bar */
+  --canvas: 214 222 217;
   /* Annotation color drawn over white card artwork; identical in both themes because the card is always white. */
-  --overlay: 15 105 92;
-  --hover: 233 231 226;
-  --line: 224 222 216;
-  --line-strong: 190 187 178;
-  --fg: 31 30 27;
-  --fg-muted: 94 91 84;
-  --fg-subtle: 126 123 115;
-  --accent: 15 105 92;
-  --accent-hover: 10 84 73;
+  --overlay: 0 138 85;
+  --hover: 232 239 235;
+  --line: 226 234 229; /* #E2EAE5 */
+  --line-strong: 187 202 193;
+  --fg: 23 43 36; /* #172B24 */
+  --fg-muted: 100 116 108; /* #64746C */
+  --fg-subtle: 116 131 123;
+  --accent: 0 92 54; /* primary #005C36 */
+  --accent-hover: 0 69 43; /* #00452B */
   --accent-fg: 255 255 255;
-  --accent-soft: 224 240 236;
-  --ok: 27 108 60;
-  --ok-soft: 226 241 230;
-  --warn: 138 84 0;
-  --warn-soft: 250 237 208;
-  --err: 176 34 34;
-  --err-soft: 251 227 225;
+  --accent-soft: 223 240 231;
+  --secondary: 0 138 85; /* #008A55 */
+  --brand: 240 24 43; /* red accent #F0182B: brand marks and urgent states only */
+  /* Dark forest green navigation */
+  --sidebar: 0 45 27;
+  --sidebar-hover: 0 69 43;
+  --sidebar-active: 0 92 54;
+  --sidebar-line: 20 82 56;
+  --sidebar-fg: 232 243 237;
+  --sidebar-muted: 150 188 168;
+  --ok: 0 138 85;
+  --ok-soft: 222 242 232;
+  /* Darker than the #D97706 swatch so warning text stays readable (>= 4.5:1) on white. */
+  --warn: 168 80 4;
+  --warn-soft: 253 238 213;
+  --err: 180 35 53; /* #B42335 */
+  --err-soft: 251 229 232;
 }
 
 :root[data-theme='dark'] {
   color-scheme: dark;
-  --bg: 22 22 20;
-  --surface: 31 31 29;
-  --surface-2: 37 37 34;
-  --rail: 27 27 25;
-  --canvas: 14 14 13;
-  --hover: 50 50 46;
-  --line: 54 54 50;
-  --line-strong: 84 84 77;
-  --fg: 236 234 228;
-  --fg-muted: 166 163 154;
-  --fg-subtle: 130 127 119;
-  --accent: 86 190 166;
-  --accent-hover: 108 206 184;
-  --accent-fg: 8 28 24;
-  --accent-soft: 25 55 48;
-  --ok: 100 192 134;
-  --ok-soft: 25 50 34;
-  --warn: 228 170 62;
+  --bg: 15 24 20;
+  --surface: 22 34 28;
+  --surface-2: 28 42 35;
+  --rail: 19 30 25;
+  --canvas: 10 17 14;
+  --hover: 38 56 47;
+  --line: 40 58 49;
+  --line-strong: 72 96 83;
+  --fg: 230 240 234;
+  --fg-muted: 155 174 164;
+  --fg-subtle: 125 144 134;
+  --accent: 70 190 140;
+  --accent-hover: 100 208 163;
+  --accent-fg: 4 28 18;
+  --accent-soft: 20 56 42;
+  --secondary: 70 190 140;
+  --brand: 255 90 104;
+  --sidebar: 8 24 17;
+  --sidebar-hover: 20 52 38;
+  --sidebar-active: 0 92 54;
+  --sidebar-line: 28 62 46;
+  --sidebar-fg: 232 243 237;
+  --sidebar-muted: 140 178 158;
+  --ok: 80 200 145;
+  --ok-soft: 20 50 36;
+  --warn: 235 160 60;
   --warn-soft: 58 44 14;
-  --err: 242 122 116;
-  --err-soft: 66 30 28;
+  --err: 244 120 134;
+  --err-soft: 66 28 34;
 }
 
 @layer base {

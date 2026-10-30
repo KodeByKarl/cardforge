@@ -1,5 +1,5 @@
 appId: com.cardforge.desktop
-productName: CardForge
+productName: 1st of June
 directories:
   output: release/${version}
   buildResources: build
@@ -11,7 +11,10 @@ extraResources:
     to: corel
   - from: resources/samples
     to: samples
+  - from: resources/icon.png
+    to: icon.png
 win:
+  icon: build/icon.ico
   target:
     - target: nsis
       arch: [x64]

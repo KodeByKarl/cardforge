@@ -11,6 +11,7 @@ import { X7Notice } from '../components/X7Notice'
 import { useCorelStatus } from '../state/corel'
 import { useGeneration } from '../state/generation'
 import { useJob } from '../state/job'
+import { usePrint } from '../state/print'
 import { useTemplates } from '../state/templates'
 import { SheetGenerateScreen } from './SheetGenerate'
 
@@ -25,6 +26,7 @@ function SingleGenerateScreen({ navigate }: { navigate: (s: ScreenKey) => void }
   const { selected: template, resolved, issues } = useTemplates()
   const { status: corel } = useCorelStatus()
   const generation = useGeneration()
+  const print = usePrint()
   const toast = useToast()
   const [settings, setSettings] = useState<AppSettings | null>(null)
   const [outputDir, setOutputDir] = useState('')
@@ -196,7 +198,7 @@ function SingleGenerateScreen({ navigate }: { navigate: (s: ScreenKey) => void }
           ) : (
             <>
               <RunSummary />
-              {!running && lastJob && <Completion job={lastJob} />}
+              {!running && lastJob && <Completion job={lastJob} onPrint={() => { print.selectSource(lastJob.id); navigate('print') }} />}
               <JobLog />
             </>
           )}
@@ -326,7 +328,7 @@ export function RunSummary() {
   )
 }
 
-export function Completion({ job }: { job: JobSummary }) {
+export function Completion({ job, onPrint }: { job: JobSummary; onPrint?: () => void }) {
   const toast = useToast()
   return (
     <div className="mb-3 shrink-0 space-y-2">
@@ -341,6 +343,12 @@ export function Completion({ job }: { job: JobSummary }) {
           <Icon name="folder" size={14} />
           Open output folder
         </Button>
+        {onPrint && job.files.some((f) => /\.cdr$/i.test(f)) && (
+          <Button variant="primary" onClick={onPrint} data-testid="go-print">
+            <Icon name="print" size={14} />
+            Print…
+          </Button>
+        )}
         {job.files.length > 0 && (
           <Button onClick={() => unwrap(api.generation.openFile(job.id, 0)).catch((e) => toast.push('error', errorMessage(e)))}>Open first card in CorelDRAW</Button>
         )}

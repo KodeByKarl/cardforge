@@ -82,7 +82,7 @@ export function TemplateScreen({ navigate }: { navigate: (s: ScreenKey) => void 
             <TemplateDetail key={selected.id} record={selected} navigate={navigate} onBusy={setBusy} onError={setError} />
           ) : (
             <EmptyState title="Select or add a template">
-              In CorelDRAW, give every variable text object a name in the Object Manager (for example FullName, JobTitle, Email). Static artwork stays unnamed. The original file is never modified: CardForge keeps its own
+              In CorelDRAW, give every variable text object a name in the Object Manager (for example FullName, JobTitle, Email). Static artwork stays unnamed. The original file is never modified: the system keeps its own
               copy.
             </EmptyState>
           )}
@@ -334,7 +334,7 @@ function TemplateDetail({
           }
         >
           <p>
-            “{record.name}” and its saved mapping are removed from CardForge. The original .cdr file is not touched.
+            “{record.name}” and its saved mapping are removed from 1st of June. The original .cdr file is not touched.
           </p>
         </Dialog>
       )}

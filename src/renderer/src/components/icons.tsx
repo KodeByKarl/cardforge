@@ -1,3 +1,4 @@
+import logo from '../assets/logo.png'
 import type { ReactNode } from 'react'
 
 /** 16px line icons, drawn on a 16 grid with a 1.4 stroke so they match the 13px UI text. */
@@ -28,7 +29,8 @@ const PATHS = {
   file: 'M4 1.5h5l3 3v10H4zM9 1.5v3h3',
   plus: 'M8 3v10M3 8h10',
   copy: 'M5.5 5.5h8v8h-8zM2.5 10.5v-8h8',
-  info: 'M8 2a6 6 0 1 0 0 12A6 6 0 0 0 8 2zM8 7.2V11M8 4.9v.1'
+  info: 'M8 2a6 6 0 1 0 0 12A6 6 0 0 0 8 2zM8 7.2V11M8 4.9v.1',
+  print: 'M4.5 6V2.5h7V6M4.5 11.5h-2v-5h11v5h-2M4.5 9.5h7v4h-7z'
 } as const
 
 export type IconName = keyof typeof PATHS
@@ -41,12 +43,7 @@ export function Icon({ name, size = 16, className = '' }: { name: IconName; size
   )
 }
 
-/** Brand mark: a trim rectangle with crop marks, the same motif as the preview canvas. */
-export function BrandMark({ size = 18 }: { size?: number }): ReactNode {
-  return (
-    <svg width={size} height={size} viewBox="0 0 18 18" fill="none" aria-hidden focusable="false">
-      <rect x="4.5" y="5.5" width="9" height="7" rx="0.5" className="fill-accent" />
-      <path d="M1 5.5h2.5M14.5 5.5H17M1 12.5h2.5M14.5 12.5H17M4.5 1v2.5M4.5 14.5V17M13.5 1v2.5M13.5 14.5V17" className="stroke-fg-muted" strokeWidth="1" />
-    </svg>
-  )
+/** The company logo (1st of June Cabasal Printing), cropped to the artwork. `height` is in px. */
+export function BrandMark({ height = 34 }: { height?: number }): ReactNode {
+  return <img src={logo} alt="1st of June Cabasal Printing" height={height} style={{ height, width: 'auto' }} draggable={false} className="shrink-0" />
 }

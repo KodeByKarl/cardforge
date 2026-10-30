@@ -508,14 +508,14 @@ export class SheetGenerationService {
 
   private printSummary(p: Prepared, manifest: SheetManifest, summary: JobSummary, request: SheetGenerationRequest, note: string): string {
     const lines = [
-      `CardForge print job summary`,
+      `1st of June print job summary`,
       `Template: ${summary.templateName}`,
       `Started: ${summary.startedAt}   Finished: ${summary.finishedAt}   Status: ${summary.status}`,
       `Production mode: ${request.mode === 'copies' ? `${request.cardsPerSheet} COPIES of each record on its own sheet` : `${request.cardsPerSheet} DIFFERENT records per sheet`}`,
       `Records: ${p.records.length}   Sheets: ${manifest.totalSheets} (${request.cardsPerSheet} cards per A4 sheet)   Files: ${manifest.batches.length} (${request.sheetsPerFile} sheets per file)`,
       `Excluded because of errors: ${request.excludedRows.length}${request.excludedRows.length ? ` (rows ${request.excludedRows.slice(0, 50).join(', ')}${request.excludedRows.length > 50 ? ', …' : ''})` : ''}`,
       note,
-      'Printing is not started by CardForge. Check each file in CorelDRAW before printing.',
+      'Printing is not started by this system. Check each file in CorelDRAW before printing.',
       '',
       'File | Sheets | Spreadsheet rows | Cards | Status'
     ]

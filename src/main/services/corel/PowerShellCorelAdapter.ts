@@ -1,3 +1,5 @@
+import { join } from 'node:path'
+import type { PrintSettings } from '../../../shared/print/types'
 import type { NameAssignment } from '../../../shared/sheet/types'
 import type { ApplyResult, ExportedPage, ShapeValues, TemplateInspection } from '../../../shared/template/types'
 import { AppError } from '../../errors'
@@ -8,6 +10,7 @@ import type { ApplyOptions, CorelAdapter, CorelConnection, DocHandle } from './C
 const CONNECT_TIMEOUT_MS = 180_000 // first CorelDRAW start can be slow
 const DOC_TIMEOUT_MS = 120_000
 const CALL_TIMEOUT_MS = 60_000
+const PRINT_TIMEOUT_MS = 180_000 // big sheets spool slowly; a timeout kills the bridge and leaves the outcome uncertain
 
 /**
  * Real CorelDRAW adapter: drives resources/corel/corel-bridge.ps1 in Windows PowerShell 5.1 over COM.
@@ -22,12 +25,14 @@ export class PowerShellCorelAdapter implements CorelAdapter {
   constructor(
     private readonly progId: string,
     scriptPath: string,
-    bridge?: BridgeProcess
+    bridge?: BridgeProcess,
+    x86 = false
   ) {
     this.bridge =
       bridge ??
       new BridgeProcess({
-        command: 'powershell.exe',
+        // A 32-bit COM server (CorelDRAW X7) can only be created from a 32-bit process.
+        command: x86 ? join(process.env['SystemRoot'] ?? 'C:\Windows', 'SysWOW64', 'WindowsPowerShell', 'v1.0', 'powershell.exe') : 'powershell.exe',
         args: ['-NoLogo', '-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-File', scriptPath]
       })
   }
@@ -109,6 +114,14 @@ export class PowerShellCorelAdapter implements CorelAdapter {
 
   async exportPdf(handle: DocHandle, path: string): Promise<void> {
     await this.bridge.call('exportPdf', { handle: this.unwrap(handle), path }, DOC_TIMEOUT_MS * 2)
+  }
+
+  async configurePrint(handle: DocHandle, settings: PrintSettings): Promise<void> {
+    await this.bridge.call('configurePrint', { handle: this.unwrap(handle), settings }, CALL_TIMEOUT_MS)
+  }
+
+  async printOut(handle: DocHandle): Promise<void> {
+    await this.bridge.call('printOut', { handle: this.unwrap(handle) }, PRINT_TIMEOUT_MS)
   }
 
   async dispose(): Promise<void> {

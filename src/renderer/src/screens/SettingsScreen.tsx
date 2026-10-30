@@ -82,7 +82,7 @@ export function SettingsScreen() {
 
   const copyDiagnostics = async () => {
     const lines = [
-      `CardForge ${info?.appVersion ?? '?'}`,
+      `1st of June ${info?.appVersion ?? '?'}`,
       `Electron ${info?.electronVersion ?? '?'} / Chromium ${info?.chromeVersion ?? '?'} / Node ${info?.nodeVersion ?? '?'}`,
       `Platform: ${info?.platform ?? '?'}`,
       `Display: ${window.innerWidth}x${window.innerHeight} CSS px at ${window.devicePixelRatio}x scaling`,

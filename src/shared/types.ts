@@ -113,6 +113,8 @@ export interface CorelDetection {
   installed: boolean
   /** COM ProgIDs found in the registry, e.g. "CorelDRAW.Application.17". */
   progIds: string[]
+  /** The subset of progIds whose server is 32-bit (registered in the 32-bit registry view); they need a 32-bit PowerShell. */
+  x86ProgIds: string[]
   /** True when the X7 ProgID (version 17) is registered. */
   x7Registered: boolean
   detail: string

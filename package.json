@@ -15,6 +15,7 @@
     "dist": "npm run typecheck && npm run test && npm run build && electron-builder --win --x64",
     "test:e2e": "node tests/e2e/run.mjs",
     "test:e2e:sheet": "node tests/e2e/sheet.mjs",
+    "test:e2e:print": "node tests/e2e/print.mjs",
     "test:corel": "vitest run --config vitest.integration.config.ts"
   },
   "dependencies": {

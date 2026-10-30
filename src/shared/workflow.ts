@@ -1,7 +1,7 @@
 /** Pure workflow logic for the shell: which step comes next and how the issue list is grouped. */
 
 export type StepKey = 'import' | 'template' | 'preview' | 'generate'
-export type ScreenId = 'dashboard' | StepKey | 'settings'
+export type ScreenId = 'dashboard' | StepKey | 'print' | 'settings'
 
 export const STEP_ORDER: StepKey[] = ['import', 'template', 'preview', 'generate']
 

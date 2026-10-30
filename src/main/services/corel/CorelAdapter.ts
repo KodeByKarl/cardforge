@@ -1,6 +1,7 @@
 // Stable boundary between the app and CorelDRAW. Services (templates, preview, generation) only use
 // these primitives, so the real PowerShell/COM implementation and the test mock are interchangeable.
 
+import type { PrintSettings } from '../../../shared/print/types'
 import type { NameAssignment } from '../../../shared/sheet/types'
 import type { ApplyResult, Bounds, ExportedPage, ShapeValues, TemplateInspection } from '../../../shared/template/types'
 
@@ -48,5 +49,12 @@ export interface CorelAdapter {
   checkFonts(fonts: string[]): Promise<string[]>
   /** Writes every page of the document as one PDF. */
   exportPdf(handle: DocHandle, path: string): Promise<void>
+  /**
+   * Selects the printer and applies the settings to the open document. Nothing is sent to the printer, so a failure here
+   * is certain not to have printed anything. Throws if the named printer is not the one CorelDRAW selected.
+   */
+  configurePrint(handle: DocHandle, settings: PrintSettings): Promise<void>
+  /** Sends the configured document to the printer. A failure or timeout leaves the outcome uncertain (it may already be spooled). */
+  printOut(handle: DocHandle): Promise<void>
   dispose(): Promise<void>
 }
