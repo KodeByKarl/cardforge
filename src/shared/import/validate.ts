@@ -53,7 +53,7 @@ export function validateDataset(dataset: Dataset): ValidationResult {
     }
   }
 
-  const duplicateGroups = findDuplicates(dataset, included, issues)
+  const duplicateGroups = findDuplicates(dataset, included, issues) + findDuplicateIds(dataset, included, issues)
 
   const byRow = new Map<number, ValidationIssue[]>()
   for (const issue of issues) {
@@ -107,4 +107,35 @@ function findDuplicates(dataset: Dataset, included: ColumnConfig[], issues: Vali
     })
   }
   return groups.size
+}
+
+/** Flags every repeat of an identifier (control number) after its first occurrence, naming the first row. Returns the number of repeated ids. */
+function findDuplicateIds(dataset: Dataset, included: ColumnConfig[], issues: ValidationIssue[]): number {
+  let repeated = 0
+  for (const column of included.filter((c) => c.unique)) {
+    const firstSeen = new Map<string, number>()
+    const reported = new Set<string>()
+    for (const record of dataset.records) {
+      const value = record.values[column.key] ?? ''
+      if (value.length === 0) continue
+      const key = value.toLowerCase()
+      const first = firstSeen.get(key)
+      if (first === undefined) {
+        firstSeen.set(key, record.rowNumber)
+        continue
+      }
+      if (!reported.has(key)) {
+        reported.add(key)
+        repeated++
+      }
+      issues.push({
+        rowNumber: record.rowNumber,
+        columnKey: column.key,
+        severity: 'warning',
+        code: 'DUPLICATE_ID',
+        message: `"${column.label}" ${value} is already used on row ${first}.`
+      })
+    }
+  }
+  return repeated
 }

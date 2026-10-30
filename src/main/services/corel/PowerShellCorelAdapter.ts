@@ -1,7 +1,9 @@
+import type { NameAssignment } from '../../../shared/sheet/types'
 import type { ApplyResult, ExportedPage, ShapeValues, TemplateInspection } from '../../../shared/template/types'
 import { AppError } from '../../errors'
+import { log } from '../../logger'
 import { BridgeProcess } from './BridgeProcess'
-import type { CorelAdapter, CorelConnection, DocHandle } from './CorelAdapter'
+import type { ApplyOptions, CorelAdapter, CorelConnection, DocHandle } from './CorelAdapter'
 
 const CONNECT_TIMEOUT_MS = 180_000 // first CorelDRAW start can be slow
 const DOC_TIMEOUT_MS = 120_000
@@ -47,10 +49,14 @@ export class PowerShellCorelAdapter implements CorelAdapter {
     return inner
   }
 
-  async openDocument(path: string): Promise<DocHandle> {
+  async openDocument(path: string, options?: { light?: boolean }): Promise<DocHandle> {
     await this.connect()
-    const { handle } = await this.bridge.call<{ handle: string }>('openDoc', { path }, DOC_TIMEOUT_MS)
+    const { handle } = await this.bridge.call<{ handle: string }>('openDoc', { path, ...(options?.light ? { light: true } : {}) }, DOC_TIMEOUT_MS)
     return `${this.bridge.generation}:${handle}`
+  }
+
+  async docInfo(handle: DocHandle): Promise<{ pages: number }> {
+    return this.bridge.call<{ pages: number }>('docInfo', { handle: this.unwrap(handle) }, CALL_TIMEOUT_MS)
   }
 
   async closeDocument(handle: DocHandle): Promise<void> {
@@ -67,8 +73,23 @@ export class PowerShellCorelAdapter implements CorelAdapter {
     return this.bridge.call<TemplateInspection>('inspect', { handle: this.unwrap(handle) }, DOC_TIMEOUT_MS)
   }
 
-  async applyText(handle: DocHandle, values: ShapeValues, safeMarginMm: number): Promise<ApplyResult> {
-    return this.bridge.call<ApplyResult>('apply', { handle: this.unwrap(handle), values, safeMarginMm }, CALL_TIMEOUT_MS)
+  async applyText(handle: DocHandle, values: ShapeValues, safeMarginMm: number, options?: ApplyOptions): Promise<ApplyResult> {
+    const extra: Record<string, unknown> = {}
+    if (options?.clearRegions?.length) Object.assign(extra, { clearRegions: options.clearRegions, clearPage: options.clearPage ?? 1 })
+    if (options?.page) extra['page'] = options.page
+    if (options?.keep) extra['keep'] = true
+    return this.bridge.call<ApplyResult>('apply', { handle: this.unwrap(handle), values, safeMarginMm, ...extra }, CALL_TIMEOUT_MS)
+  }
+
+  async addSheetPages(handle: DocHandle, count: number, sourcePage = 1): Promise<number> {
+    const { pages, indexed } = await this.bridge.call<{ pages: number; indexed?: boolean }>('addSheetPages', { handle: this.unwrap(handle), count, sourcePage }, DOC_TIMEOUT_MS * 4)
+    if (indexed === false) log.warn('corel.sheet_pages_reindexed', { pages }) // the quick object lookup was not trusted; the whole document was indexed instead
+    return pages
+  }
+
+  async nameShapes(handle: DocHandle, items: NameAssignment[]): Promise<number> {
+    const { named } = await this.bridge.call<{ named: number }>('nameShapes', { handle: this.unwrap(handle), items }, DOC_TIMEOUT_MS)
+    return named
   }
 
   async exportPages(handle: DocHandle, options: { dir: string; prefix: string; dpi: number; pages: number[] }): Promise<ExportedPage[]> {
@@ -78,6 +99,10 @@ export class PowerShellCorelAdapter implements CorelAdapter {
 
   async saveAs(handle: DocHandle, path: string, fileVersion: number): Promise<void> {
     await this.bridge.call('saveAs', { handle: this.unwrap(handle), path, version: fileVersion }, DOC_TIMEOUT_MS)
+  }
+
+  async exportPdf(handle: DocHandle, path: string): Promise<void> {
+    await this.bridge.call('exportPdf', { handle: this.unwrap(handle), path }, DOC_TIMEOUT_MS * 2)
   }
 
   async dispose(): Promise<void> {

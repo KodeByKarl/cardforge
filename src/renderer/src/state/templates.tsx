@@ -1,4 +1,6 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from 'react'
+import { sheetMappingIssues } from '../../../shared/sheet/compose'
+import { columnSamples } from '../../../shared/sheet/samples'
 import { mappingIssues, resolveMapping, type MappingIssue, type ResolvedEntry } from '../../../shared/template/mapping'
 import type { TemplateRecord, TemplateSummary } from '../../../shared/template/types'
 import { ApiError, api, errorMessage, unwrap } from '../api'
@@ -15,7 +17,12 @@ interface TemplatesContextValue {
   update(record: TemplateRecord): void
   /** Mapping resolved against the currently imported spreadsheet. */
   resolved: Map<string, ResolvedEntry>
+  /** Mapping problems of the selected template, for single-card and sheet templates alike (errors block preview and generation). */
   issues: MappingIssue[]
+  /** True for a template prepared as a multi-card sheet. */
+  sheetMode: boolean
+  /** A field mapping has been saved (single-card mapping or sheet mapping). */
+  mappingSaved: boolean
 }
 
 const TemplatesContext = createContext<TemplatesContextValue | null>(null)
@@ -85,14 +92,23 @@ export function TemplatesProvider({ children }: { children: ReactNode }) {
   )
 
   const columns = dataset?.columns ?? []
+  const sheetMode = !!selected?.sheet?.preparedAt
   const resolved = useMemo(
-    () => (selected ? resolveMapping(selected.mapping, selected.inspection.objects, columns) : new Map<string, ResolvedEntry>()),
-    [selected, columns]
+    () => (selected && !sheetMode ? resolveMapping(selected.mapping, selected.inspection.objects, columns) : new Map<string, ResolvedEntry>()),
+    [selected, sheetMode, columns]
   )
-  const issues = useMemo(() => (selected ? mappingIssues(selected.inspection.objects, selected.mapping, columns) : []), [selected, columns])
+  const issues = useMemo((): MappingIssue[] => {
+    if (!selected) return []
+    if (selected.sheet?.preparedAt) {
+      if (!dataset) return []
+      return sheetMappingIssues(selected.sheet, selected.sheetMapping ?? null, dataset.columns, columnSamples(dataset)).filter((i) => i.code !== 'GRID_WARNING').map((i) => ({ objectName: null, severity: i.severity, message: i.message }))
+    }
+    return mappingIssues(selected.inspection.objects, selected.mapping, columns)
+  }, [selected, dataset, columns])
+  const mappingSaved = sheetMode ? !!selected?.sheetMapping : !!selected?.mapping
 
   return (
-    <TemplatesContext.Provider value={{ list, listError, selected, loading, refresh, select, update, resolved, issues }}>{children}</TemplatesContext.Provider>
+    <TemplatesContext.Provider value={{ list, listError, selected, loading, refresh, select, update, resolved, issues, sheetMode, mappingSaved }}>{children}</TemplatesContext.Provider>
   )
 }
 

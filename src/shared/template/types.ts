@@ -1,4 +1,5 @@
 // Template, preview and generation types shared by main and renderer.
+import type { NameAssignment, SheetConfig, SheetMapping, UnnamedText } from '../sheet/types'
 
 export interface PageInfo {
   /** 1-based. Page 1 is the front, page 2 (if present) the back. */
@@ -40,6 +41,8 @@ export interface TemplateInspection {
   objects: TemplateObject[]
   /** Text objects without a name; they are static artwork and cannot be mapped. */
   unnamedTextCount: number
+  /** Details of the unnamed text objects (capped), used to detect repeated cards on a sheet. */
+  unnamed?: UnnamedText[]
   corelVersion: string
 }
 
@@ -57,6 +60,8 @@ export interface ObjectMetric {
 export interface ApplyResult {
   objects: ObjectMetric[]
   notFound: string[]
+  /** Number of shapes removed because they sat in an empty card position. */
+  cleared?: number
   /** How the bridge resets the document between records: CorelDRAW Undo, or explicit restore of text + base formatting. */
   revertMode?: 'undo' | 'restore'
 }
@@ -86,6 +91,8 @@ export interface TemplateSummary {
   objectCount: number
   corelVersion: string
   hasMapping: boolean
+  /** True once the template was prepared as a multi-card sheet. */
+  sheetMode?: boolean
 }
 
 export interface TemplateRecord extends TemplateSummary {
@@ -93,6 +100,11 @@ export interface TemplateRecord extends TemplateSummary {
   sizeBytes: number
   inspection: TemplateInspection
   mapping: SavedMapping | null
+  /** Multi-card sheet layout detected for this template (null/absent for single-card templates). */
+  sheet?: SheetConfig | null
+  sheetMapping?: SheetMapping | null
+  /** Inspection of the client's unprepared layout, kept so the grid can be re-detected. */
+  sheetOriginalInspection?: TemplateInspection
 }
 
 export interface TemplateSourceStatus {
@@ -105,6 +117,9 @@ export interface PreviewRequest {
   values: ShapeValues
   dpi: number
   pages: number[]
+  /** Card positions without a record: their static artwork is removed from the render (page `clearPage`). */
+  clearRegions?: Bounds[]
+  clearPage?: number
 }
 
 export interface PreviewPage {
@@ -186,6 +201,8 @@ export interface JobProgress {
   current: { rowNumber: number; fileName: string } | null
   entry: JobLogEntry | null
   error: string | null
+  /** Present for sheet jobs: progress in sheets and output files. */
+  sheet?: { sheetsDone: number; sheetsTotal: number; batchesDone: number; batchesTotal: number; currentSheet: number | null }
 }
 
 export interface JobSummary {
@@ -204,4 +221,11 @@ export interface JobSummary {
   reportPath: string | null
   files: string[]
   error: string | null
+  /** Present for sheet jobs. */
+  sheetJob?: { sheets: number; cardsPerSheet: number; sheetsPerFile: number; batches: number; manifestPath: string | null; summaryPath: string | null; verification: string[] }
+}
+
+export interface SheetPrepareResult {
+  record: TemplateRecord
+  assignments: NameAssignment[]
 }

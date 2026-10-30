@@ -15,7 +15,7 @@ function jobTone(job: JobSummary): Tone {
 
 export function DashboardScreen({ navigate }: { navigate: (s: ScreenKey) => void }) {
   const { state, validation, reset } = useJob()
-  const { selected, issues } = useTemplates()
+  const { selected, issues, mappingSaved, sheetMode } = useTemplates()
   const { history, running, progress } = useGeneration()
   const { status: corel, error: corelError } = useCorelStatus()
   const toast = useToast()
@@ -59,7 +59,7 @@ export function DashboardScreen({ navigate }: { navigate: (s: ScreenKey) => void
                 <StatusRow
                   tone={!selected ? 'neutral' : hasBlockingMappingIssues(issues) ? 'error' : issues.length ? 'warn' : 'ok'}
                   label="CDR template"
-                  value={!selected ? 'No template selected' : `${selected.name} · ${selected.inspection.objects.length} named objects${selected.mapping ? ' · mapping saved' : ' · not mapped yet'}`}
+                  value={!selected ? 'No template selected' : `${selected.name} · ${sheetMode ? `${selected.sheet!.cells.length} cards per sheet` : `${selected.inspection.objects.length} named objects`}${mappingSaved ? ' · mapping saved' : ' · not mapped yet'}`}
                   action={<Button onClick={() => navigate('template')}>{selected ? 'Review' : 'Choose'}</Button>}
                 />
                 {running && progress && (

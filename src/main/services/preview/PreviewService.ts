@@ -9,6 +9,8 @@ import { fileToDataUrl } from '../fsutil'
 import type { TemplateStore } from '../templates/TemplateStore'
 
 const CACHE_LIMIT = 300
+/** Full A4 sheet renders are large; the cache is bounded by size as well as by count so memory stays controlled. */
+const CACHE_BYTES_LIMIT = 160 * 1024 * 1024
 const RECOVERABLE = new Set(['COREL_RESTARTED', 'BRIDGE_EXITED', 'BRIDGE_TIMEOUT', 'COREL_GONE'])
 
 interface Session {
@@ -24,7 +26,8 @@ interface Session {
  */
 export class PreviewService {
   private session: Session | null = null
-  private readonly cache = new Map<string, { templateId: string; result: PreviewResult }>()
+  private readonly cache = new Map<string, { templateId: string; result: PreviewResult; bytes: number }>()
+  private cacheBytes = 0
   private chain: Promise<unknown> = Promise.resolve()
 
   constructor(
@@ -48,18 +51,18 @@ export class PreviewService {
 
     const safe = this.safeMarginMm()
     const sorted = Object.fromEntries(Object.entries(request.values).sort(([a], [b]) => a.localeCompare(b)))
-    const key = createHash('sha256').update(JSON.stringify([template.id, template.sourceHash, request.dpi, request.pages, sorted, safe])).digest('hex')
+    const key = createHash('sha256').update(JSON.stringify([template.id, template.sourceHash, template.updatedAt, request.dpi, request.pages, sorted, safe, request.clearRegions ?? null, request.clearPage ?? null])).digest('hex')
     const hit = this.cache.get(key)
     if (hit) {
       this.cache.delete(key)
-      this.cache.set(key, hit) // refresh LRU position
+      this.cache.set(key, hit) // refresh LRU position (its bytes stay counted)
       return hit.result
     }
 
     try {
       const adapter = await this.getAdapter()
       const session = await this.openSession(adapter, template.id, template.sourceHash)
-      const applied = await adapter.applyText(session.handle, request.values, safe)
+      const applied = await adapter.applyText(session.handle, request.values, safe, { clearRegions: request.clearRegions, clearPage: request.clearPage })
       await mkdir(this.tmpDir, { recursive: true })
       const files = await adapter.exportPages(session.handle, { dir: this.tmpDir, prefix: randomUUID(), dpi: request.dpi, pages: request.pages })
       const pages = []
@@ -69,8 +72,7 @@ export class PreviewService {
         await rm(f.path, { force: true })
       }
       const result: PreviewResult = { pages, objects: applied.objects, notFound: applied.notFound, rendererVersion: template.inspection.corelVersion }
-      this.cache.set(key, { templateId: template.id, result })
-      if (this.cache.size > CACHE_LIMIT) this.cache.delete(this.cache.keys().next().value!)
+      this.remember(key, template.id, result)
       return result
     } catch (err) {
       if (!retried && err instanceof AppError && RECOVERABLE.has(err.code)) {
@@ -79,6 +81,17 @@ export class PreviewService {
         return this.renderNow(request, true)
       }
       throw err
+    }
+  }
+
+  private remember(key: string, templateId: string, result: PreviewResult): void {
+    const bytes = result.pages.reduce((n, p) => n + p.dataUrl.length, 0)
+    this.cache.set(key, { templateId, result, bytes })
+    this.cacheBytes += bytes
+    while ((this.cache.size > CACHE_LIMIT || this.cacheBytes > CACHE_BYTES_LIMIT) && this.cache.size > 1) {
+      const oldest = this.cache.keys().next().value!
+      this.cacheBytes -= this.cache.get(oldest)!.bytes
+      this.cache.delete(oldest)
     }
   }
 
@@ -103,12 +116,22 @@ export class PreviewService {
   async invalidate(templateId: string, adapter?: CorelAdapter): Promise<void> {
     await this.chain
     if (this.session?.templateId === templateId) await this.closeSession(adapter)
-    for (const [k, v] of this.cache) if (v.templateId === templateId) this.cache.delete(k)
+    for (const [k, v] of this.cache) {
+      if (v.templateId !== templateId) continue
+      this.cacheBytes -= v.bytes
+      this.cache.delete(k)
+    }
   }
 
   async close(adapter?: CorelAdapter): Promise<void> {
     await this.chain
     await this.closeSession(adapter)
     this.cache.clear()
+    this.cacheBytes = 0
+  }
+
+  /** Cache size, exposed for the large-batch memory report and tests. */
+  cacheStats(): { entries: number; bytes: number } {
+    return { entries: this.cache.size, bytes: this.cacheBytes }
   }
 }

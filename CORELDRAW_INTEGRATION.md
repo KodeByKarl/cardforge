@@ -134,3 +134,14 @@ Does `ExportArea` behave the same? Does X7's edition/licence allow COM automatio
 | Modal dialogs (missing fonts, recovery, updates) block COM | Timeouts + bridge restart; ask operators to close dialogs and keep CorelDRAW idle |
 | Missing fonts on the production PC | Fonts are listed per object in Template setup; previews show CorelDRAW's actual substitution |
 | PowerClip contents, text on path, master-page objects | Groups verified; PowerClip search implemented but untested; master-page objects are not searched |
+
+## 10. Card-sheet findings (v27.2, added for the client's 10-up layouts)
+
+* **Layers and guidelines.** `Page.Shapes` includes guidelines (a separate *Guides* layer). Copying `Page.Shapes.All()` to another page moved only the guidelines on a real layout. Pages are copied **per non-guide layer** with `ShapeRange.CopyToLayer` (0.3 s per page; `Duplicate`+`MoveToLayer` took 2.2 s and, on the real file, failed). Guidelines are not copied.
+* **No clipboard** is used for page copies, so the operator's clipboard is untouched.
+* **Object names.** Unnamed text objects are named (`C01_f1` = card 1, text 1) only in the private library copy, saved with `SaveAs` version 17; the client's file and an untouched `template.original.cdr` are kept. Objects are referenced by traversal ordinal during preparation.
+* **Composite text.** One object can hold several fields on separate lines with leading-space padding; the text is rebuilt line by line keeping each line's padding.
+* **Speed levers.** `Application.Optimization = $true` while filling; read bounds once; cache page boxes; skip per-object base formatting for big documents; delete empty-position artwork with one `ShapeRange.Delete`; open finished output with a *light* open (no index) when verifying.
+* **Output files.** `SaveAs` with `Version = 17` produces a ZIP container (`PK`), used as a cheap validity signature. `Document.PublishToPDF(path)` writes all pages (10 pages ≈ 0.9 s).
+* **Fonts.** The real layouts use Arial, Segoe Print and Gotham. If a font is missing CorelDRAW substitutes silently; this is not detected by CardForge and must be checked on the production PC.
+* **X7.** `Layer.IsGuidesLayer`, `ShapeRange.CopyToLayer`, `Page.FindShape` with four arguments, `Application.Optimization` and `Document.PublishToPDF` are used. Their presence and behaviour in X7 are **unverified**; validate with `npm run test:corel` and the sheet e2e on the client's PC.

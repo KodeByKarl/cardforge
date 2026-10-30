@@ -5,7 +5,9 @@ import type { ScreenKey } from '../App'
 import { api, errorMessage, unwrap } from '../api'
 import { Icon } from '../components/icons'
 import { Badge, Banner, Button, Dialog, EmptyState, PageHeader, StatusDot, type Tone } from '../components/ui'
+import { SheetMappingEditor, SheetOverlay, SheetPrepare } from '../components/SheetTemplate'
 import { X7Notice } from '../components/X7Notice'
+import type { DetectionResult } from '../../../shared/sheet/types'
 import { useJob } from '../state/job'
 import { pageLabel, useTemplates } from '../state/templates'
 
@@ -144,6 +146,10 @@ function TemplateDetail({
   const [images, setImages] = useState<{ pageIndex: number; dataUrl: string }[]>([])
   const [source, setSource] = useState<TemplateSourceStatus | null>(null)
   const [highlight, setHighlight] = useState<string | null>(null)
+  const [highlightRole, setHighlightRole] = useState<string | null>(null)
+  const [analysis, setAnalysis] = useState<DetectionResult | null>(null)
+  const sheet = record.sheet?.preparedAt ? record.sheet : null
+  const sheetCandidate = !sheet && record.inspection.objects.length === 0 && (record.inspection.unnamed?.length ?? 0) > 0
   const [confirmRemove, setConfirmRemove] = useState(false)
   const pages = record.inspection.pages
 
@@ -206,8 +212,8 @@ function TemplateDetail({
               </Badge>
             )}
             <Badge>{pages.length === 2 ? 'Front + back' : `${pages.length} page(s)`}</Badge>
-            <Badge>{record.inspection.objects.length} named text objects</Badge>
-            {record.inspection.unnamedTextCount > 0 && <Badge>{record.inspection.unnamedTextCount} unnamed (static) text</Badge>}
+            {sheet ? <Badge tone="info">Card sheet · {sheet.cells.length} cards ({sheet.columns} × {sheet.rows})</Badge> : <Badge>{record.inspection.objects.length} named text objects</Badge>}
+            {record.inspection.unnamedTextCount > 0 && !sheetCandidate && <Badge>{record.inspection.unnamedTextCount} unnamed (static) text</Badge>}
             <Badge tone="info">Inspected with CorelDRAW {record.inspection.corelVersion.replace(/^Version /, '')}</Badge>
           </div>
         </div>
@@ -247,14 +253,29 @@ function TemplateDetail({
             {pages.map((p) => {
               const img = images.find((i) => i.pageIndex === p.index)
               return (
-                <figure key={p.index} className="w-full" style={{ maxWidth: `min(100%, calc(34vh * ${p.widthMm / p.heightMm}))` }}>
+                <figure key={p.index} className="w-full" style={{ maxWidth: `min(100%, calc(${p.heightMm > 150 ? 62 : 34}vh * ${p.widthMm / p.heightMm}))` }}>
                   <div className="relative bg-white shadow-card" style={{ aspectRatio: `${p.widthMm} / ${p.heightMm}` }}>
                     {img ? <img src={img.dataUrl} alt={`${pageLabel(p.index, pages.length)} of ${record.name}`} className="h-full w-full" draggable={false} /> : <p className="p-3 text-xs text-fg-muted">No image</p>}
-                    {record.inspection.objects
-                      .filter((o) => o.pageIndex === p.index)
-                      .map((o, i) => (
-                        <ObjectBox key={`${o.name}-${i}`} object={o} widthMm={p.widthMm} heightMm={p.heightMm} active={highlight === o.name} />
-                      ))}
+                    {sheet ? (
+                      p.index === sheet.pageIndex && (
+                        <SheetOverlay
+                          page={p}
+                          cells={sheet.cells}
+                          boxes={sheet.cells.flatMap((c) =>
+                            sheet.roles.flatMap((r) => {
+                              const o = record.inspection.objects.find((x) => x.name === c.objects[r.id])
+                              return o ? [{ ...o.bounds, active: highlightRole === r.id }] : []
+                            })
+                          )}
+                        />
+                      )
+                    ) : sheetCandidate && analysis ? (
+                      p.index === analysis.config.pageIndex && <SheetOverlay page={p} cells={analysis.config.cells} boxes={(record.inspection.unnamed ?? []).filter((u) => u.pageIndex === p.index).map((u) => ({ ...u.bounds, active: false }))} />
+                    ) : (
+                      record.inspection.objects
+                        .filter((o) => o.pageIndex === p.index)
+                        .map((o, i) => <ObjectBox key={`${o.name}-${i}`} object={o} widthMm={p.widthMm} heightMm={p.heightMm} active={highlight === o.name} />)
+                    )}
                   </div>
                   <figcaption className="mt-1 text-center text-xs tabular-nums text-fg-muted">
                     {pageLabel(p.index, pages.length)} · {p.widthMm} × {p.heightMm} mm
@@ -269,8 +290,14 @@ function TemplateDetail({
         </section>
 
         <div className="flex min-h-0 flex-col bg-surface">
-          <MappingEditor record={record} onHighlight={setHighlight} onError={onError} onImport={() => navigate('import')} />
-          {issues.length > 0 && (
+          {sheet ? (
+            <SheetMappingEditor key={record.id} record={record} onHighlight={setHighlightRole} onError={onError} onChanged={(r) => update(r)} />
+          ) : sheetCandidate ? (
+            <SheetPrepare record={record} onAnalysis={setAnalysis} onPrepared={(r) => update(r)} />
+          ) : (
+            <MappingEditor record={record} onHighlight={setHighlight} onError={onError} onImport={() => navigate('import')} />
+          )}
+          {!sheet && !sheetCandidate && issues.length > 0 && (
             <ul className="shrink-0 space-y-0.5 border-t border-line bg-surface-2 px-4 py-2" aria-label="Mapping check">
               {issues.map((i, n) => (
                 <li key={n} className={`flex items-start gap-1.5 ${i.severity === 'error' ? 'text-err' : 'text-warn'}`}>
@@ -283,7 +310,7 @@ function TemplateDetail({
               ))}
             </ul>
           )}
-          {!dataset && (
+          {!dataset && !sheetCandidate && (
             <div className="shrink-0 border-t border-line p-2">
               <Banner tone="info" title="Import a spreadsheet to map columns." actions={<Button onClick={() => navigate('import')} className="h-6 px-2 text-xs">Go to Excel import</Button>} />
             </div>

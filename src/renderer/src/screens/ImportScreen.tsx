@@ -4,7 +4,7 @@ import type { ColumnConfig, Dataset, FieldKind, ValidationIssue, ValidationResul
 import { groupIssues } from '../../../shared/workflow'
 import { api, errorMessage, formatBytes, unwrap } from '../api'
 import { Icon } from '../components/icons'
-import { Badge, Banner, Button, EmptyState, PageHeader, Spinner, Tabs, tabId } from '../components/ui'
+import { Badge, Banner, Button, EmptyState, PageHeader, Progress, Spinner, Tabs, tabId } from '../components/ui'
 import { useJob } from '../state/job'
 
 const ACCEPTED = ['.xlsx', '.csv']
@@ -25,7 +25,7 @@ function useFilePicker() {
 }
 
 export function ImportScreen() {
-  const { state } = useJob()
+  const { state, importProgress } = useJob()
   const { pick, pickError } = useFilePicker()
 
   return (
@@ -51,10 +51,21 @@ export function ImportScreen() {
       {state.phase === 'empty' && <DropZone onBrowse={pick} />}
       {(state.phase === 'opening' || state.phase === 'reading') && (
         <div className="grid flex-1 place-items-center" role="status">
-          <p className="muted flex items-center gap-2">
-            <Spinner />
-            {state.phase === 'opening' ? 'Opening workbook…' : `Reading “${state.sheetName}”…`}
-          </p>
+          <div className="w-72">
+            <p className="muted flex items-center gap-2">
+              <Spinner />
+              {state.phase === 'opening'
+                ? 'Opening workbook…'
+                : importProgress && importProgress.phase === 'reading' && importProgress.total > 0
+                  ? `Reading rows… ${importProgress.done.toLocaleString()} of ${importProgress.total.toLocaleString()}`
+                  : `Reading “${state.sheetName}”…`}
+            </p>
+            {state.phase === 'reading' && importProgress && importProgress.total > 0 && (
+              <div className="mt-2">
+                <Progress value={importProgress.done} max={importProgress.total} label="Import progress" />
+              </div>
+            )}
+          </div>
         </div>
       )}
       {state.phase === 'error' && (
@@ -191,7 +202,7 @@ function ImportWorkspace() {
         <div className="space-y-1.5 px-4 pt-2">
           {state.truncated && (
             <Banner tone="warn" title="This sheet was cut off">
-              Only the first 20,000 rows and 200 columns were imported. Split the file into smaller batches.
+              The worksheet is larger than the supported size (1,048,576 rows × 200 columns). Everything beyond that was not imported.
             </Banner>
           )}
           {validation.issues
@@ -238,7 +249,7 @@ function SummaryStrip({ validation, dataset, onIssues }: { validation: Validatio
   const Count = ({ n, label, tone, action }: { n: number; label: string; tone: string; action?: boolean }) => {
     const body = (
       <>
-        <span className={`font-semibold tabular-nums ${n > 0 ? tone : 'text-fg'}`}>{n}</span> <span className="text-fg-muted">{label}</span>
+        <span className={`font-semibold tabular-nums ${n > 0 ? tone : 'text-fg'}`}>{n.toLocaleString()}</span> <span className="text-fg-muted">{label}</span>
       </>
     )
     return action && n > 0 ? (
@@ -338,7 +349,7 @@ function RecordsTable({ dataset, validation, focusRow }: { dataset: Dataset; val
           <option value="warnings">With warnings</option>
         </select>
         <span className="muted ml-auto tabular-nums">
-          {rows.length} of {dataset.records.length}
+          {rows.length.toLocaleString()} of {dataset.records.length.toLocaleString()}
         </span>
       </div>
       <div ref={scroller} className="min-h-0 flex-1 overflow-auto">
@@ -441,6 +452,9 @@ function ColumnsTable({ dataset }: { dataset: Dataset }) {
             <th className="table-head w-28" title="Records with the same values in all marked columns are flagged as duplicates">
               Duplicate key
             </th>
+            <th className="table-head w-24" title="Identifier such as a control number: repeated values are flagged">
+              Unique ID
+            </th>
             <th className="table-head w-16 text-right">Empty</th>
           </tr>
         </thead>
@@ -467,6 +481,9 @@ function ColumnsTable({ dataset }: { dataset: Dataset }) {
               </td>
               <td className="table-cell">
                 <input type="checkbox" className="check" aria-label={`${c.label} is part of duplicate key`} disabled={!c.include} checked={c.duplicateKey} onChange={(e) => updateColumn(c.key, { duplicateKey: e.target.checked })} />
+              </td>
+              <td className="table-cell">
+                <input type="checkbox" className="check" aria-label={`${c.label} is a unique identifier`} disabled={!c.include} checked={!!c.unique} onChange={(e) => updateColumn(c.key, { unique: e.target.checked })} />
               </td>
               <td className="table-cell text-right tabular-nums">{c.include ? emptyCount(c) : '–'}</td>
             </tr>

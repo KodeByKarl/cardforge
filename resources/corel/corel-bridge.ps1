@@ -35,6 +35,8 @@ $script:docs = @{}
 $script:nextHandle = 1
 # 'undo' when command groups + Undo work; 'restore' (explicit reset of text and base formatting) otherwise.
 $script:revertMode = 'undo'
+# Base formatting is only needed for the explicit-restore fallback; it is skipped when rebuilding the index of big documents.
+$script:captureBase = $true
 
 function Send($obj) {
   $json = ConvertTo-Json -InputObject $obj -Depth 12 -Compress
@@ -52,6 +54,11 @@ function Fail([string]$code, [string]$message) {
 function Round3([double]$v) {
   if ([double]::IsNaN($v) -or [double]::IsInfinity($v)) { return 0 }
   return [math]::Round($v, 3)
+}
+
+function Opt($a, [string]$name, $default) {
+  if ($a -and ($a.PSObject.Properties.Name -contains $name) -and $null -ne $a.$name) { return $a.$name }
+  return $default
 }
 
 function Require-App {
@@ -79,12 +86,19 @@ function Add-Shapes($shapes, [int]$pageIndex, [string[]]$path, $entries, $counte
     if ($type -eq $cdrTextShape) {
       if ($s.Name) {
         # Original text and base formatting, used to reset the object if Undo is unavailable.
-        $story = $s.Text.Story
-        $c1 = $story.Characters.Item(1)
-        $base = @{ text = $story.Text; font = $c1.Font; size = $c1.Size; bold = $c1.Bold; italic = $c1.Italic }
+        $base = $null
+        if ($script:captureBase) {
+          $story = $s.Text.Story
+          $c1 = $story.Characters.Item(1)
+          $base = @{ text = $story.Text; font = $c1.Font; size = $c1.Size; bold = $c1.Bold; italic = $c1.Italic }
+        }
         [void]$entries.Add(@{ name = $s.Name; shape = $s; pageIndex = $pageIndex; path = $path; base = $base })
       }
-      else { $counter.unnamed++ }
+      else {
+        $counter.unnamed++
+        # Ordinal in document traversal order: the same for every open of the same file; used to name the object.
+        [void]$counter.list.Add(@{ uid = "u$($counter.unnamed)"; shape = $s; pageIndex = $pageIndex; path = $path })
+      }
     } elseif ($type -eq $cdrGroupShape) {
       $label = if ($s.Name) { $s.Name } else { 'Group' }
       Add-Shapes $s.Shapes $pageIndex ($path + $label) $entries $counter
@@ -100,11 +114,11 @@ function Add-Shapes($shapes, [int]$pageIndex, [string[]]$path, $entries, $counte
 
 function Build-Index($doc) {
   $entries = New-Object System.Collections.ArrayList
-  $counter = @{ unnamed = 0 }
+  $counter = @{ unnamed = 0; list = (New-Object System.Collections.ArrayList) }
   for ($p = 1; $p -le $doc.Pages.Count; $p++) {
     Add-Shapes $doc.Pages.Item($p).Shapes $p @() $entries $counter
   }
-  return @{ entries = $entries; unnamed = $counter.unnamed }
+  return @{ entries = $entries; unnamed = $counter.unnamed; unnamedList = $counter.list }
 }
 
 # Replacing Story.Text flattens mixed formatting, so detect it up front.
@@ -136,7 +150,7 @@ function Get-Bounds($shape, $box) {
   }
 }
 
-function Test-Overflow($entry, $box, [double]$safeMarginMm) {
+function Test-Overflow($entry, $box, [double]$safeMarginMm, $b) {
   $s = $entry.shape
   $text = $s.Text
   if ($text.Type -eq $cdrParagraphText) {
@@ -148,7 +162,6 @@ function Test-Overflow($entry, $box, [double]$safeMarginMm) {
     if ($over) { return 'Text does not fit its paragraph frame.' }
     # Frames set to grow with their text never report overflow, so fall through to the card-edge check.
   }
-  $b = Get-Bounds $s $box
   $m = $safeMarginMm
   if ($b.left -lt $m -or $b.bottom -lt $m -or $b.right -gt ($box.width - $m) -or $b.top -gt ($box.height - $m)) {
     return ("Text extends into the {0} mm safety margin or past the card edge." -f $m)
@@ -181,8 +194,18 @@ function Cmd-OpenDoc($a) {
   $doc.Unit = $cdrMillimeter
   $handle = "d$($script:nextHandle)"
   $script:nextHandle++
-  $script:docs[$handle] = @{ doc = $doc; index = (Build-Index $doc); applied = $false }
+  # A light open (used to verify finished output) skips indexing every text object, which is slow for big documents.
+  $index = $null
+  if ([bool](Opt $a 'light' $false)) { $index = @{ entries = (New-Object System.Collections.ArrayList); unnamed = 0; unnamedList = (New-Object System.Collections.ArrayList) } }
+  else { $index = Build-Index $doc }
+  $script:docs[$handle] = @{ doc = $doc; index = $index; applied = $false; cleared = $false }
   return @{ handle = $handle }
+}
+
+# Page count only: cheap, works on a light-opened document.
+function Cmd-DocInfo($a) {
+  $d = Get-Doc ([string]$a.handle)
+  return @{ pages = [int]$d.doc.Pages.Count }
 }
 
 function Cmd-CloseDoc($a) {
@@ -225,7 +248,29 @@ function Cmd-Inspect($a) {
       bounds = (Get-Bounds $s $box)
     })
   }
-  return @{ pages = [object[]]$pages; objects = [object[]]$objects; unnamedTextCount = $d.index.unnamed; corelVersion = "$($script:app.Version)" }
+  $unnamed = New-Object System.Collections.ArrayList
+  foreach ($u in $d.index.unnamedList) {
+    if ($unnamed.Count -ge 500) { break }
+    $s = $u.shape
+    $story = $s.Text.Story
+    $box = Get-PageBox $doc $u.pageIndex
+    $first = $story.Characters.Item(1)
+    [void]$unnamed.Add(@{
+      uid = $u.uid
+      pageIndex = $u.pageIndex
+      path = [object[]]$u.path
+      text = ($story.Text -replace "`r", "`n")
+      font = "$($first.Font)"
+      sizePt = Round3 $first.Size
+      bold = [bool]$first.Bold
+      italic = [bool]$first.Italic
+      alignment = [int]$story.Alignment
+      isParagraph = ($s.Text.Type -eq $cdrParagraphText)
+      mixedFormatting = (Test-MixedFormatting $story)
+      bounds = (Get-Bounds $s $box)
+    })
+  }
+  return @{ pages = [object[]]$pages; objects = [object[]]$objects; unnamedTextCount = $d.index.unnamed; unnamed = [object[]]$unnamed; corelVersion = "$($script:app.Version)" }
 }
 
 # Returns the document to the template state before the next record. Replacing text keeps the CURRENT
@@ -234,9 +279,15 @@ function Cmd-Inspect($a) {
 function Revert-Record($d) {
   if (-not $d.applied) { return }
   if ($script:revertMode -eq 'undo') {
-    try { $d.doc.Undo(1); $d.applied = $false; return } catch { $script:revertMode = 'restore' }
+    try {
+      $d.doc.Undo(1)
+      $d.applied = $false
+      if ($d.cleared) { $d.index = Build-Index $d.doc; $d.cleared = $false }
+      return
+    } catch { $script:revertMode = 'restore' }
   }
   foreach ($e in $d.index.entries) {
+    if ($null -eq $e.base) { continue }
     $story = $e.shape.Text.Story
     $story.Text = $e.base.text
     $story.Font = $e.base.font
@@ -248,14 +299,27 @@ function Revert-Record($d) {
 }
 
 function Cmd-Apply($a) {
+  $script:app.Optimization = $true
+  try { return Invoke-Apply $a } finally { $script:app.Optimization = $false }
+}
+
+function Invoke-Apply($a) {
   $d = Get-Doc ([string]$a.handle)
   Revert-Record $d
+  $keep = [bool](Opt $a 'keep' $false)
+  if ($keep) {
+    # Multi-sheet documents: every page is filled once and never reverted.
+    $result = Apply-Values $d $a
+    $result.cleared = (Clear-Regions $d $a $true)
+    return $result
+  }
   $grouped = $false
   if ($script:revertMode -eq 'undo') {
     try { $d.doc.BeginCommandGroup('CardForge record'); $grouped = $true } catch { $script:revertMode = 'restore' }
   }
   try {
     $result = Apply-Values $d $a
+    $result.cleared = (Clear-Regions $d $a $false)
   } finally {
     if ($grouped) { $d.doc.EndCommandGroup() }
     $d.applied = $true
@@ -263,25 +327,133 @@ function Cmd-Apply($a) {
   return $result
 }
 
+# Removes the static artwork of card positions that hold no record on this sheet (their text was already blanked).
+# Only shapes that lie entirely inside a region are touched, so page-wide artwork is never deleted.
+function Clear-Regions($d, $a, [bool]$permanent) {
+  if (-not ($a.PSObject.Properties.Name -contains 'clearRegions') -or $null -eq $a.clearRegions) { return 0 }
+  if (-not $permanent -and $script:revertMode -ne 'undo') { return 0 }
+  $pageIndex = [int](Opt $a 'clearPage' 1)
+  $page = $d.doc.Pages.Item($pageIndex)
+  $box = Get-PageBox $d.doc $pageIndex
+  $victims = $script:app.CreateShapeRange()
+  $count = 0
+  for ($i = 1; $i -le $page.Shapes.Count; $i++) {
+    $s = $page.Shapes.Item($i)
+    if ($s.Type -eq 9) { continue } # guidelines
+    $l = $s.LeftX - $box.left; $r = $s.RightX - $box.left; $b = $s.BottomY - $box.bottom; $t = $s.TopY - $box.bottom
+    foreach ($reg in $a.clearRegions) {
+      if ($l -ge ($reg.left - 1) -and $r -le ($reg.right + 1) -and $b -ge ($reg.bottom - 1) -and $t -le ($reg.top + 1)) { [void]$victims.Add($s); $count++; break }
+    }
+  }
+  if ($count -gt 0) { $victims.Delete() }
+  if ($count -gt 0 -and -not $permanent) { $d.cleared = $true }
+  return $count
+}
+
 function Apply-Values($d, $a) {
   $safe = [double]$a.safeMarginMm
+  $pageScope = [int](Opt $a 'page' 0)
   $results = New-Object System.Collections.ArrayList
   $notFound = New-Object System.Collections.ArrayList
+  $boxes = @{}
+  $byName = @{}
+  foreach ($e in $d.index.entries) {
+    if ($pageScope -ne 0 -and $e.pageIndex -ne $pageScope) { continue }
+    if (-not $byName.ContainsKey($e.name)) { $byName[$e.name] = New-Object System.Collections.ArrayList }
+    [void]$byName[$e.name].Add($e)
+  }
   foreach ($prop in $a.values.PSObject.Properties) {
     $name = $prop.Name
     $value = ([string]$prop.Value) -replace "`r`n", "`r" -replace "`n", "`r"
-    # Not "$matches": that is PowerShell's automatic regex variable.
-    $hits = @($d.index.entries | Where-Object { $_.name -eq $name })
-    if ($hits.Count -eq 0) { [void]$notFound.Add($name); continue }
-    foreach ($e in $hits) {
-      $e.shape.Text.Story.Text = $value
-      $box = Get-PageBox $d.doc $e.pageIndex
+    if (-not $byName.ContainsKey($name)) { [void]$notFound.Add($name); continue }
+    foreach ($e in $byName[$name]) {
+      try { $e.shape.Text.Story.Text = $value }
+      catch { Fail 'APPLY_FAILED' ("Could not set the text of '{0}' on page {1}: {2}" -f $name, $e.pageIndex, $_.Exception.Message) }
+      if (-not $boxes.ContainsKey($e.pageIndex)) { $boxes[$e.pageIndex] = Get-PageBox $d.doc $e.pageIndex }
+      $box = $boxes[$e.pageIndex]
+      $bounds = Get-Bounds $e.shape $box
       $reason = $null
-      if ($value.Length -gt 0) { $reason = Test-Overflow $e $box $safe }
-      [void]$results.Add(@{ name = $name; pageIndex = $e.pageIndex; overflow = ($null -ne $reason); reason = $reason; bounds = (Get-Bounds $e.shape $box) })
+      if ($value.Length -gt 0) { $reason = Test-Overflow $e $box $safe $bounds }
+      [void]$results.Add(@{ name = $name; pageIndex = $e.pageIndex; overflow = ($null -ne $reason); reason = $reason; bounds = $bounds })
     }
   }
   return @{ objects = [object[]]$results; notFound = [object[]]$notFound; revertMode = $script:revertMode }
+}
+
+# Gives unnamed text objects names (in the private working copy only). Items: [{uid, name}].
+function Cmd-NameShapes($a) {
+  $d = Get-Doc ([string]$a.handle)
+  Revert-Record $d
+  $byUid = @{}
+  foreach ($u in $d.index.unnamedList) { $byUid[$u.uid] = $u.shape }
+  $named = 0
+  foreach ($item in $a.items) {
+    $name = [string]$item.name
+    if ($name -notmatch '^[A-Za-z][A-Za-z0-9_]{0,63}$') { Fail 'INVALID_ARGS' "Invalid object name '$name'." }
+    $uid = [string]$item.uid
+    if (-not $byUid.ContainsKey($uid)) { Fail 'SHAPE_NOT_FOUND' "Object $uid is no longer in the document. Re-import the template." }
+    $byUid[$uid].Name = $name
+    $named++
+  }
+  $d.index = Build-Index $d.doc
+  return @{ named = $named }
+}
+
+# Appends `count` copies of a page (artwork and named objects) to the document without using the clipboard.
+function Cmd-AddSheetPages($a) {
+  $script:app.Optimization = $true
+  try { return Invoke-AddSheetPages $a } finally { $script:app.Optimization = $false }
+}
+
+function Invoke-AddSheetPages($a) {
+  $d = Get-Doc ([string]$a.handle)
+  Revert-Record $d
+  $doc = $d.doc
+  $src = [int](Opt $a 'sourcePage' 1)
+  $count = [int]$a.count
+  if ($count -lt 1 -or $count -gt 500) { Fail 'INVALID_ARGS' 'Page count must be 1-500.' }
+  if ($src -lt 1 -or $src -gt $doc.Pages.Count) { Fail 'INVALID_ARGS' "Page $src does not exist." }
+  $page = $doc.Pages.Item($src)
+  $w = $page.SizeWidth; $h = $page.SizeHeight
+  $srcEntries = @($d.index.entries | Where-Object { $_.pageIndex -eq $src })
+  $added = New-Object System.Collections.ArrayList
+  $complete = $true
+  for ($i = 1; $i -le $count; $i++) {
+    [void]$doc.InsertPagesEx(1, $false, $doc.Pages.Count, $w, $h)
+    $newIndex = $doc.Pages.Count
+    $newPage = $doc.Pages.Item($newIndex)
+    # Copy layer by layer: Page.Shapes also returns guidelines (a separate guides layer), and moving those alone
+    # would leave the new page without its artwork. Guidelines are editing aids and are not copied.
+    $copied = 0
+    for ($l = 1; $l -le $page.Layers.Count; $l++) {
+      $srcLayer = $page.Layers.Item($l)
+      if ($srcLayer.IsGuidesLayer -or $srcLayer.Shapes.Count -eq 0) { continue }
+      $target = $null
+      for ($k = 1; $k -le $newPage.Layers.Count; $k++) { if (-not $newPage.Layers.Item($k).IsGuidesLayer -and $newPage.Layers.Item($k).Name -eq $srcLayer.Name) { $target = $newPage.Layers.Item($k); break } }
+      if ($null -eq $target) { $target = $newPage.CreateLayer($srcLayer.Name) }
+      # CopyToLayer keeps positions and is several times faster than Duplicate + MoveToLayer on real artwork.
+      $copy = $srcLayer.Shapes.All().CopyToLayer($target)
+      $copied += $copy.Count
+    }
+    if ($copied -eq 0) { Fail 'COPY_FAILED' 'The sheet page could not be copied.' }
+    # The copies carry the same names: find them by name instead of re-reading the whole document.
+    foreach ($e in $srcEntries) {
+      $s2 = $null
+      try { $s2 = $newPage.FindShape($e.name, 0, $true, 0) } catch { $s2 = $null }
+      # Anything that is not the copied text object (nothing, a group, a shape of another page) means the quick lookup
+      # cannot be trusted: fall back to indexing the whole document below.
+      $ok = $false
+      if ($null -ne $s2) { try { $ok = ($s2.Type -eq $cdrTextShape) -and ($null -ne $s2.Text) -and ($s2.Name -eq $e.name) } catch { $ok = $false } }
+      if (-not $ok) { $complete = $false; break }
+      [void]$added.Add(@{ name = $e.name; shape = $s2; pageIndex = $newIndex; path = $e.path; base = $null })
+    }
+  }
+  if ($complete) { foreach ($x in $added) { [void]$d.index.entries.Add($x) } }
+  else {
+    $script:captureBase = $false
+    try { $d.index = Build-Index $d.doc } finally { $script:captureBase = $true }
+  }
+  return @{ pages = $doc.Pages.Count; indexed = $complete }
 }
 
 function Cmd-ExportPages($a) {
@@ -320,6 +492,14 @@ function Cmd-ExportPages($a) {
   return @{ files = [object[]]$files }
 }
 
+# Print-ready PDF of every page of the document (CorelDRAW's default PDF settings).
+function Cmd-ExportPdf($a) {
+  $d = Get-Doc ([string]$a.handle)
+  Revert-Record $d
+  $d.doc.PublishToPDF([string]$a.path)
+  return @{ path = [string]$a.path }
+}
+
 function Cmd-SaveAs($a) {
   $d = Get-Doc ([string]$a.handle)
   $version = [int]$a.version
@@ -341,10 +521,14 @@ function Invoke-Request([string]$cmd, $a) {
     'connect' { return Cmd-Connect $a }
     'openDoc' { return Cmd-OpenDoc $a }
     'closeDoc' { return Cmd-CloseDoc $a }
+    'docInfo' { return Cmd-DocInfo $a }
     'inspect' { return Cmd-Inspect $a }
     'apply' { return Cmd-Apply $a }
+    'nameShapes' { return Cmd-NameShapes $a }
+    'addSheetPages' { return Cmd-AddSheetPages $a }
     'exportPages' { return Cmd-ExportPages $a }
     'saveAs' { return Cmd-SaveAs $a }
+    'exportPdf' { return Cmd-ExportPdf $a }
     'shutdown' { Cleanup; return @{ bye = $true } }
     default { Fail 'UNKNOWN_COMMAND' "Unknown command '$cmd'." }
   }

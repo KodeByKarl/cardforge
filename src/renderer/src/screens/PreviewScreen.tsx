@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type PointerEvent as ReactPointerEvent } from 'react'
 import { hasBlockingMappingIssues, missingFieldsFor, objectNamesByPosition, shapeValuesFor } from '../../../shared/template/mapping'
-import type { PreviewResult, TemplateRecord } from '../../../shared/template/types'
+import type { Bounds, PreviewResult, TemplateRecord } from '../../../shared/template/types'
 import type { ImportRecord } from '../../../shared/types'
 import {
   CSS_PX_PER_MM,
@@ -20,6 +20,7 @@ import { api, errorMessage, unwrap } from '../api'
 import { Icon } from '../components/icons'
 import { Badge, Banner, Button, EmptyState, IconButton, PageHeader, Segmented, Spinner, useElementSize } from '../components/ui'
 import { X7Notice } from '../components/X7Notice'
+import { SheetPreview } from './SheetPreview'
 import { useJob } from '../state/job'
 import { pageLabel, useTemplates } from '../state/templates'
 
@@ -90,6 +91,7 @@ export function PreviewScreen({ navigate }: { navigate: (s: ScreenKey) => void }
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
+      if (template?.sheet?.preparedAt) return // the sheet workspace has its own shortcuts
       if (isTyping(e.target) || e.ctrlKey || e.metaKey || e.altKey || document.querySelector('[role=dialog]')) return
       const n = records.length
       const act = (fn: () => void) => {
@@ -132,6 +134,8 @@ export function PreviewScreen({ navigate }: { navigate: (s: ScreenKey) => void }
       }
     />
   )
+
+  if (!gate && template?.sheet?.preparedAt) return <SheetPreview template={template} />
 
   if (gate) {
     const content =
@@ -259,18 +263,18 @@ export function PreviewScreen({ navigate }: { navigate: (s: ScreenKey) => void }
 }
 
 /** Renders one record through CorelDRAW; keeps the previous image on screen while the next one renders. */
-function useCorelRender(template: TemplateRecord, values: Record<string, string> | null, dpi: number, pages: number[]) {
+export function useCorelRender(template: TemplateRecord, values: Record<string, string> | null, dpi: number, pages: number[], clear?: { regions: Bounds[]; page: number }) {
   const [result, setResult] = useState<PreviewResult | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
   const [nonce, setNonce] = useState(0)
-  const key = JSON.stringify([template.id, template.updatedAt, values, dpi, pages, nonce])
+  const key = JSON.stringify([template.id, template.updatedAt, values, dpi, pages, nonce, clear ?? null])
   useEffect(() => {
     if (!values) return
     let stale = false
     setLoading(true)
     setError(null)
-    unwrap(api.preview.render({ templateId: template.id, values, dpi, pages }))
+    unwrap(api.preview.render({ templateId: template.id, values, dpi, pages, ...(clear && clear.regions.length > 0 ? { clearRegions: clear.regions, clearPage: clear.page } : {}) }))
       .then((r) => !stale && setResult(r), (err) => !stale && setError(errorMessage(err)))
       .finally(() => !stale && setLoading(false))
     return () => {

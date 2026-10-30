@@ -5,6 +5,7 @@ import { registerIpc } from './ipc'
 import { initLogger, log } from './logger'
 import { CorelService } from './services/corel/CorelService'
 import { GenerationService } from './services/generation/GenerationService'
+import { SheetGenerationService } from './services/generation/SheetGenerationService'
 import { JobHistory } from './services/generation/JobHistory'
 import { PreviewService } from './services/preview/PreviewService'
 import { TemplateStore } from './services/templates/TemplateStore'
@@ -67,7 +68,7 @@ if (!app.requestSingleInstanceLock()) {
     }
   })
 
-  let services: { corel: CorelService; preview: PreviewService; generation: GenerationService } | null = null
+  let services: { corel: CorelService; preview: PreviewService; generation: GenerationService; sheetGeneration: SheetGenerationService } | null = null
 
   void app.whenReady().then(async () => {
     const userData = app.getPath('userData')
@@ -90,8 +91,17 @@ if (!app.requestSingleInstanceLock()) {
         for (const win of BrowserWindow.getAllWindows()) win.webContents.send(IPC_EVENTS.generationProgress, progress)
       }
     })
-    services = { corel, preview, generation }
-    registerIpc({ settings, corel, templates, preview, generation, history })
+    const sheetGeneration = new SheetGenerationService({
+      store: templates,
+      getAdapter,
+      history,
+      safeMarginMm: () => settings.get().safeMarginMm,
+      onProgress: (progress) => {
+        for (const win of BrowserWindow.getAllWindows()) win.webContents.send(IPC_EVENTS.generationProgress, progress)
+      }
+    })
+    services = { corel, preview, generation, sheetGeneration }
+    registerIpc({ settings, corel, templates, preview, generation, sheetGeneration, history })
     createWindow()
   })
 
@@ -105,7 +115,10 @@ if (!app.requestSingleInstanceLock()) {
     const finish = async () => {
       const running = s.generation.activeJobId
       if (running) s.generation.cancel(running)
+      const sheetRunning = s.sheetGeneration.activeJobId
+      if (sheetRunning) s.sheetGeneration.cancel(sheetRunning)
       await s.generation.waitForIdle()
+      await s.sheetGeneration.waitForIdle()
       await s.preview.close()
       await s.corel.dispose()
     }

@@ -22,9 +22,19 @@ Status: ✅ done and verified (on CorelDRAW v27 where CorelDRAW is involved) · 
 | F13 | Real card dimensions and aspect ratio | ✅ from CorelDRAW page size; 100 % = real size at Windows' nominal 96 dpi |
 | F14 | Reusable template mappings saved locally | ✅ per template, by column header |
 | F15 | Batch generation of editable CDR (X7 format), progress, current record, counts, logs, cancel, no duplicate jobs, overwrite confirmation, output folder, safe names, report, open folder / open file | ✅ |
-| F16 | Optional PDF export | ⏳ not started; never substitutes for CDR |
+| F16 | Optional PDF export | 🟡 per job for card sheets (one PDF per CDR, CorelDRAW default settings); not available for single-card jobs; not validated against press specs |
 | F17 | Printing | Out of scope: the operator prints from CorelDRAW; no automatic print jobs |
-| F18 | Multi-up imposition / bleed / crop marks | ❓ needs print specs |
+| F18 | Multi-up imposition | ✅ see F19–F27. Bleed / crop marks: none specified by the client, none drawn |
+| F19 | Large spreadsheets: no 20,000-row limit, 40,897 rows tested, no silent truncation, progress, paged table | ✅ |
+| F20 | Identifier columns (control number): required + unique by default, duplicates flagged per repeat | ✅ |
+| F21 | Unnamed CDR templates: detect repeated cards from object positions, name objects in a private copy, never modify the original | ✅ (v27, synthetic templates; real layouts analysed) |
+| F22 | Visual mapping: card grid outlines on the page, one reference card mapped line by line to columns, auto-match, replicated to every position | ✅ |
+| F23 | N-up A4 production mode (default = detected grid, e.g. 10; any 1..N), unique records per card, partly filled last sheet | ✅ |
+| F24 | Sheet preview: CorelDRAW-rendered A4, sheet navigation, jump, search by control number/name, card zoom, overflow + blank-field warnings, print-margin guide | ✅ |
+| F25 | Bulk generation: several sheets per CDR (default 25), optional PDF, manifest, resume, safe cancel, verification, report, print summary | ✅ |
+| F26 | Control-number prefix mismatch is flagged and blocks generation until confirmed; never converted | ✅ |
+| F27 | Unmapped data fields print blank, never the template's sample text | ✅ |
+| F28 | Client data protection: client files git-ignored and purged from local history; no contents in logs, reports, fixtures or docs | ✅ |
 
 ## Non-functional
 

@@ -1,5 +1,36 @@
 # Test Report
 
+## Client-workflow adaptation (card sheets), latest full run: 2026-10-30
+
+Windows 11 · Node 26 · Electron 33.2.1 · **CorelDRAW 27.2** (not X7). All data and templates in committed tests are synthetic.
+
+| Suite | Command | Result |
+|---|---|---|
+| Type-check | `npm run typecheck` | ✅ clean |
+| Production build | `npm run build` | ✅ |
+| Unit tests | `npm test` | ✅ **134 / 134** (12 files; adds sheet detection/composition/planning, batches, request validation, 40,897-row import, control-number checks) |
+| Integration, real CorelDRAW | `npm run test:corel` | ✅ **19 / 19** (3 opt-in benchmarks skipped by default) |
+| E2E, existing app, 100 % scaling | `npm run test:e2e` | ✅ **41 / 41** |
+| E2E, existing app, 125 % and 150 % | `E2E_SCALE=1.25 / 1.5 npm run test:e2e` | ✅ **41 / 41** each |
+| E2E, card-sheet workflow, 100 / 125 / 150 % | `npm run test:e2e:sheet` | ✅ **24 / 24** each |
+| Private smoke test on the real client workbook | git-ignored, aggregates only | ✅ 40,897 records, header row 3 |
+| **Anything on CorelDRAW X7** | – | ❌ **not run: X7 unavailable** |
+| PDF export, installer | – | PDF only for sheet jobs, no installer work yet |
+
+Card-sheet e2e covers: 40,897-record import (1.7 s) with paging and no truncation; identifier column flags; 10-up detection on an unnamed template with outlines on the page; preparing; mapping with prefix-mismatch block and confirmation; sheet preview (A4 aspect, 10 cards, sheet 1 of 4,090, card zoom, search by control number, go-to sheet, last sheet with 7 cards and 3 empty positions, keyboard, zoom); plan of 40,897 records → 4,090 sheets → 164 files; large-job confirmation; a real 47-record job (5 sheets, 3 files + PDF) verified on disk; resume dialog; layout probe on template, preview and generate at 800×480, 1024×768, 1280×720, 1366×768, 1920×1080 in light and dark.
+
+Details and timings: `LARGE_BATCH_TEST_REPORT.md`. Output/print notes: `PRINT_PRODUCTION_VALIDATION.md`.
+
+### Not tested
+* CorelDRAW X7 (anything). Fonts Gotham / Segoe Print on a machine that lacks them.
+* A full 4,090-sheet run (extrapolated ≈1 h 40 min from 30-sheet runs).
+* Sheet engine under an injected CorelDRAW crash; renderer memory profile at 40,897 records beyond responsiveness in e2e.
+* Printing, PDF/X, bleed and crop marks (not specified by the client).
+
+---
+
+## Earlier results (before the client-workflow adaptation)
+
 Last run: 2026-10-29 · Windows 11 · Node 26.13 (tests) · Electron 33.2.1 (app) · **CorelDRAW v27.2.0.135**
 
 > All CorelDRAW results below are from **v27.2**. **CorelDRAW X7 has not been tested.** These results do not

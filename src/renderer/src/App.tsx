@@ -44,12 +44,12 @@ export function App() {
 function Shell() {
   const [screen, setScreen] = useState<ScreenKey>('dashboard')
   const { state, validation, dataset } = useJob()
-  const { selected, issues } = useTemplates()
+  const { selected, issues, mappingSaved } = useTemplates()
   const { running, progress } = useGeneration()
   const { status: corel } = useCorelStatus()
 
   const mappingBlocked = !!selected && hasBlockingMappingIssues(issues)
-  const flags = { hasRecords: (dataset?.records.length ?? 0) > 0, hasTemplate: !!selected, mappingBlocked, mappingSaved: !!selected?.mapping, running }
+  const flags = { hasRecords: (dataset?.records.length ?? 0) > 0, hasTemplate: !!selected, mappingBlocked, mappingSaved, running }
   const done = stepsDone(flags)
   const next = nextAction(screen, flags)
 
@@ -74,8 +74,8 @@ function Shell() {
     generate: running ? 'info' : 'neutral'
   }
   const summaries: Record<StepKey, string> = {
-    import: state.phase === 'error' ? 'Import failed' : validation ? `${validation.totalRecords} records${validation.recordsWithErrors ? ` · ${validation.recordsWithErrors} with errors` : ''}` : 'No file',
-    template: selected ? (mappingBlocked ? 'Mapping errors' : selected.mapping ? `${selected.name}` : 'Not mapped') : 'None selected',
+    import: state.phase === 'error' ? 'Import failed' : validation ? `${validation.totalRecords.toLocaleString()} records${validation.recordsWithErrors ? ` · ${validation.recordsWithErrors.toLocaleString()} with errors` : ''}` : 'No file',
+    template: selected ? (mappingBlocked ? 'Mapping errors' : mappingSaved ? `${selected.name}` : 'Not mapped') : 'None selected',
     preview: flags.hasRecords && selected ? 'Check each card' : 'Needs data + template',
     generate: running && progress ? `${progress.done} / ${progress.total}` : 'Create CDR files'
   }
@@ -173,7 +173,7 @@ function ProjectStrip({ navigate }: { navigate: (s: ScreenKey) => void }) {
         {state.workbook ? (
           <>
             <span className="truncate font-medium text-fg">{state.workbook.fileName}</span>
-            {validation && <span className="shrink-0 text-fg-muted compact:hidden">· {validation.totalRecords} records</span>}
+            {validation && <span className="shrink-0 text-fg-muted compact:hidden">· {validation.totalRecords.toLocaleString()} records</span>}
           </>
         ) : (
           'No spreadsheet'

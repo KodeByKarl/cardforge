@@ -61,6 +61,11 @@ export function guessFieldKind(label: string): FieldKind {
   return 'text'
 }
 
+/** Identifier-style columns: control number, employee/ID number. Matched on the header text only. */
+export function isIdentifierColumn(label: string): boolean {
+  return /(control|ctrl)\s*(no|num|#)|\b(employee|member|voter|id)\s*(no|num|number|id)\b|^id$/i.test(label.trim())
+}
+
 function isNameColumn(label: string): boolean {
   return /\bname\b/i.test(label)
 }
@@ -89,7 +94,8 @@ export function buildColumns(grid: CellGrid, headerRowIndex: number): ColumnConf
       kind,
       include: raw.length > 0,
       required: false,
-      duplicateKey: false
+      duplicateKey: false,
+      unique: false
     })
   }
 
@@ -99,6 +105,13 @@ export function buildColumns(grid: CellGrid, headerRowIndex: number): ColumnConf
   // A name column is almost always mandatory on a calling card.
   const nameColumn = columns.find((c) => c.include && isNameColumn(c.label))
   if (nameColumn) nameColumn.required = true
+  // An identifier (control number) must be present and appear once; it is checked on its own, not as part of the name key.
+  for (const c of columns) {
+    if (c.include && isIdentifierColumn(c.label)) {
+      c.required = true
+      c.unique = true
+    }
+  }
 
   return columns
 }

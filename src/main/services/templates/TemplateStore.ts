@@ -1,14 +1,17 @@
 import { randomUUID } from 'node:crypto'
 import { constants } from 'node:fs'
-import { copyFile, mkdir, readdir, rm, stat } from 'node:fs/promises'
+import { copyFile, mkdir, readdir, rename, rm, stat } from 'node:fs/promises'
 import { basename, extname, join, resolve, sep } from 'node:path'
+import { parseSheetMapping } from '../../../shared/sheet/compose'
+import { detectSheetGrid } from '../../../shared/sheet/detect'
+import type { DetectionOptions, DetectionResult } from '../../../shared/sheet/types'
 import { parseSavedMapping } from '../../../shared/template/mapping'
 import type { TemplateInspection, TemplateRecord, TemplateSourceStatus, TemplateSummary } from '../../../shared/template/types'
 import { AppError } from '../../errors'
 import { log } from '../../logger'
 import { assertReadableFile, assertSafePath } from '../../paths'
 import { parseId } from '../../validation'
-import type { CorelAdapter } from '../corel/CorelAdapter'
+import { X7_FILE_VERSION, type CorelAdapter } from '../corel/CorelAdapter'
 import { fileToDataUrl, pathExists, readJson, sha256File, writeJsonAtomic } from '../fsutil'
 
 export const TEMPLATE_EXTENSIONS = ['.cdr'] as const
@@ -16,6 +19,8 @@ export const MAX_TEMPLATE_BYTES = 300 * 1024 * 1024
 const THUMBNAIL_DPI = 150
 const TEMPLATE_FILE = 'template.cdr'
 const META_FILE = 'meta.json'
+/** Untouched library copy kept when a template is prepared as a sheet, so preparation can be redone or undone. */
+const ORIGINAL_FILE = 'template.original.cdr'
 
 function summarize(r: TemplateRecord): TemplateSummary {
   return {
@@ -27,7 +32,8 @@ function summarize(r: TemplateRecord): TemplateSummary {
     pages: r.inspection.pages,
     objectCount: r.inspection.objects.length,
     corelVersion: r.inspection.corelVersion,
-    hasMapping: r.mapping !== null
+    hasMapping: r.mapping !== null || !!r.sheetMapping,
+    sheetMode: !!r.sheet?.preparedAt
   }
 }
 
@@ -165,6 +171,109 @@ export class TemplateStore {
     return this.write({ ...record, mapping: parsed, hasMapping: true })
   }
 
+  // ---- Multi-card sheet templates ----
+
+  private detectFor(record: TemplateRecord, options: DetectionOptions): DetectionResult {
+    const unnamed = record.inspection.unnamed ?? []
+    const page = record.inspection.pages.find((p) => p.index === (options.pageIndex ?? 1)) ?? record.inspection.pages[0]
+    const result = detectSheetGrid(unnamed, { ...options, pageWidthMm: page?.widthMm, pageHeightMm: page?.heightMm })
+    if ('error' in result) throw new AppError('SHEET_NOT_DETECTED', result.error)
+    return result
+  }
+
+  /** The record as the client made it: for a prepared sheet that is the inspection taken before preparation. */
+  private async sourceRecord(id: string): Promise<TemplateRecord> {
+    const record = await this.get(id)
+    if (!record.sheet?.preparedAt) return record
+    if (!record.sheetOriginalInspection || !(await pathExists(join(this.dir(id), ORIGINAL_FILE)))) {
+      throw new AppError('SHEET_ORIGINAL_MISSING', 'The unprepared copy of this template is missing. Re-import the template to change its layout.')
+    }
+    return { ...record, inspection: record.sheetOriginalInspection }
+  }
+
+  /** Proposes the card grid for a template without changing anything (pure, no CorelDRAW needed). */
+  async analyzeSheet(id: string, options: unknown): Promise<DetectionResult> {
+    return this.detectFor(await this.sourceRecord(id), parseDetectionOptions(options))
+  }
+
+  /**
+   * Gives the repeated text objects of a card sheet stable names in the PRIVATE library copy, so every other part of
+   * the app (preview, generation) can address them like any named object. The client's original file is never touched.
+   */
+  async prepareSheet(id: string, options: unknown): Promise<TemplateRecord> {
+    const opts = parseDetectionOptions(options)
+    let record = await this.get(id)
+    if (record.sheet?.preparedAt) record = await this.revertSheet(id)
+    const { config, assignments } = this.detectFor(record, opts)
+    const dir = this.dir(id)
+    const library = join(dir, TEMPLATE_FILE)
+    const original = join(dir, ORIGINAL_FILE)
+    if (!(await pathExists(original))) await copyFile(library, original, constants.COPYFILE_EXCL)
+    const originalInspection = record.inspection
+
+    const adapter = await this.getAdapter()
+    const work = await this.makeWorkingCopy(id)
+    const prepared = join(this.workRoot, `${id.slice(0, 8)}-${randomUUID()}-prepared.cdr`)
+    const handle = await adapter.openDocument(work)
+    try {
+      const named = await adapter.nameShapes(handle, assignments)
+      if (named !== assignments.length) throw new AppError('SHEET_PREPARE_FAILED', `Only ${named} of ${assignments.length} objects could be named.`)
+      await adapter.saveAs(handle, prepared, X7_FILE_VERSION)
+    } finally {
+      await adapter.closeDocument(handle).catch((err) => log.warn('templates.close_failed', { error: err }))
+      await rm(work, { force: true })
+    }
+    try {
+      if ((await stat(prepared)).size === 0) throw new AppError('SHEET_PREPARE_FAILED', 'CorelDRAW saved an empty file.')
+      const staged = `${library}.new`
+      await copyFile(prepared, staged)
+      await rename(staged, library)
+    } finally {
+      await rm(prepared, { force: true })
+    }
+
+    const inspection = await this.inspectLibraryCopy(id)
+    const missing = assignments.filter((a) => !inspection.objects.some((o) => o.name === a.name))
+    if (missing.length > 0) {
+      await copyFile(original, library)
+      throw new AppError('SHEET_PREPARE_FAILED', `${missing.length} objects were not found after preparing the template. The template was left unchanged.`)
+    }
+    log.info('templates.sheet_prepared', { id, columns: config.columns, rows: config.rows, objects: assignments.length })
+    return this.write({
+      ...record,
+      inspection,
+      pages: inspection.pages,
+      objectCount: inspection.objects.length,
+      corelVersion: inspection.corelVersion,
+      sheet: { ...config, preparedAt: new Date().toISOString() },
+      sheetMapping: null,
+      sheetOriginalInspection: originalInspection
+    })
+  }
+
+  /** Restores the client's original layout (unnamed objects) and forgets the sheet configuration. */
+  async revertSheet(id: string): Promise<TemplateRecord> {
+    const record = await this.get(id)
+    const original = join(this.dir(id), ORIGINAL_FILE)
+    if (!record.sheet?.preparedAt || !(await pathExists(original))) return record
+    await copyFile(original, join(this.dir(id), TEMPLATE_FILE))
+    const inspection = await this.inspectLibraryCopy(id)
+    const { sheetOriginalInspection: _drop, ...rest } = record
+    return this.write({ ...rest, inspection, pages: inspection.pages, objectCount: inspection.objects.length, sheet: null, sheetMapping: null })
+  }
+
+  async saveSheetMapping(id: string, mapping: unknown): Promise<TemplateRecord> {
+    let parsed
+    try {
+      parsed = parseSheetMapping(mapping)
+    } catch (err) {
+      throw new AppError('INVALID_ARGS', (err as Error).message)
+    }
+    const record = await this.get(id)
+    if (!record.sheet) throw new AppError('INVALID_ARGS', 'This template is not prepared as a sheet.')
+    return this.write({ ...record, sheetMapping: parsed })
+  }
+
   async rename(id: string, name: unknown): Promise<TemplateRecord> {
     if (typeof name !== 'string' || name.trim().length === 0 || name.length > 120) throw new AppError('INVALID_ARGS', 'Name must be 1–120 characters.')
     return this.write({ ...(await this.get(id)), name: name.trim() })
@@ -201,4 +310,17 @@ export class TemplateStore {
     }
     return out
   }
+}
+
+function parseDetectionOptions(value: unknown): DetectionOptions {
+  if (value === undefined || value === null) return {}
+  if (typeof value !== 'object') throw new AppError('INVALID_ARGS', 'Invalid layout options.')
+  const v = value as Record<string, unknown>
+  const int = (x: unknown, max: number): number | undefined => {
+    if (x === undefined || x === null) return undefined
+    if (typeof x !== 'number' || !Number.isInteger(x) || x < 1 || x > max) throw new AppError('INVALID_ARGS', `Grid size must be a whole number from 1 to ${max}.`)
+    return x
+  }
+  if (v.order !== undefined && v.order !== 'rows' && v.order !== 'columns') throw new AppError('INVALID_ARGS', 'Invalid card order.')
+  return { columns: int(v.columns, 12), rows: int(v.rows, 20), pageIndex: int(v.pageIndex, 50), order: v.order as DetectionOptions['order'] }
 }

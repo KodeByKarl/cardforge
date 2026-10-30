@@ -20,10 +20,10 @@ export function zoomOut(zoom: number): number {
 }
 
 /** Zoom that fits a card (or cards side by side) into a box, never above MAX_ZOOM. */
-export function fitZoom(widthMm: number, heightMm: number, boxWidthPx: number, boxHeightPx: number): number {
+export function fitZoom(widthMm: number, heightMm: number, boxWidthPx: number, boxHeightPx: number, minZoom = MIN_ZOOM): number {
   if (widthMm <= 0 || heightMm <= 0 || boxWidthPx <= 0 || boxHeightPx <= 0) return 1
   const z = Math.min(boxWidthPx / (widthMm * CSS_PX_PER_MM), boxHeightPx / (heightMm * CSS_PX_PER_MM))
-  return clampZoom(Math.floor(z * 100) / 100)
+  return Math.min(MAX_ZOOM, Math.max(minZoom, Math.floor(z * 100) / 100))
 }
 
 /** On-screen size of a card in CSS px; the aspect ratio always matches the real card. */

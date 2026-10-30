@@ -12,8 +12,15 @@ import { useCorelStatus } from '../state/corel'
 import { useGeneration } from '../state/generation'
 import { useJob } from '../state/job'
 import { useTemplates } from '../state/templates'
+import { SheetGenerateScreen } from './SheetGenerate'
 
+/** Sheet templates use the sheet production screen; single-card templates keep the one-file-per-record screen. */
 export function GenerateScreen({ navigate }: { navigate: (s: ScreenKey) => void }) {
+  const { selected, sheetMode } = useTemplates()
+  return sheetMode && selected ? <SheetGenerateScreen template={selected} navigate={navigate} /> : <SingleGenerateScreen navigate={navigate} />
+}
+
+function SingleGenerateScreen({ navigate }: { navigate: (s: ScreenKey) => void }) {
   const { dataset, validation, state } = useJob()
   const { selected: template, resolved, issues } = useTemplates()
   const { status: corel } = useCorelStatus()
@@ -261,7 +268,7 @@ export function GenerateScreen({ navigate }: { navigate: (s: ScreenKey) => void 
   )
 }
 
-function Check({ tone, label, value, action }: { tone: Tone; label: string; value: string; action?: React.ReactNode }) {
+export function Check({ tone, label, value, action }: { tone: Tone; label: string; value: string; action?: React.ReactNode }) {
   return (
     <li className="flex items-center gap-3 py-2">
       <StatusDot tone={tone} />
@@ -277,7 +284,7 @@ function Check({ tone, label, value, action }: { tone: Tone; label: string; valu
 }
 
 /** Batch progress: bar, current record, and the three counters that matter. */
-function RunSummary() {
+export function RunSummary() {
   const { progress, running } = useGeneration()
   if (!progress) return null
   const status = running
@@ -305,7 +312,12 @@ function RunSummary() {
           <span className="font-semibold">{progress.skipped}</span> skipped
         </p>
       </div>
-      <Progress value={progress.done} max={progress.total} label="Generation progress" tone={progress.failed ? 'warn' : 'info'} />
+      <Progress value={progress.sheet ? progress.sheet.sheetsDone : progress.done} max={progress.sheet ? progress.sheet.sheetsTotal : progress.total} label="Generation progress" tone={progress.failed ? 'warn' : 'info'} />
+      {progress.sheet && (
+        <p className="mt-1 text-xs tabular-nums text-fg-muted" data-testid="sheet-progress">
+          Sheet {progress.sheet.sheetsDone.toLocaleString()} of {progress.sheet.sheetsTotal.toLocaleString()} · file {Math.min(progress.sheet.batchesDone + (running ? 1 : 0), progress.sheet.batchesTotal).toLocaleString()} of {progress.sheet.batchesTotal.toLocaleString()}
+        </p>
+      )}
       <p className="mt-1.5 truncate text-xs text-fg-muted" role="status" aria-live="polite">
         {running && <span className="spinner mr-1.5 align-[-2px]" aria-hidden />}
         {status}
@@ -314,7 +326,7 @@ function RunSummary() {
   )
 }
 
-function Completion({ job }: { job: JobSummary }) {
+export function Completion({ job }: { job: JobSummary }) {
   const toast = useToast()
   return (
     <div className="mb-3 shrink-0 space-y-2">
@@ -338,7 +350,7 @@ function Completion({ job }: { job: JobSummary }) {
   )
 }
 
-function JobLog() {
+export function JobLog() {
   const { entries } = useGeneration()
   const [onlyProblems, setOnlyProblems] = useState(false)
   const shown = [...entries].reverse().filter((e) => !onlyProblems || e.status !== 'ok' || e.overflow.length > 0)

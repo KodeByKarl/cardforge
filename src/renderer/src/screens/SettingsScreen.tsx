@@ -174,10 +174,10 @@ export function SettingsScreen() {
                 <span className="muted">mm</span>
               </div>
             </Row>
-            <Row label="PDF export" hint="Generated files are editable CDR in CorelDRAW X7 (v17) format.">
+            <Row label="PDF export" hint="Card-sheet jobs have their own PDF option on the Generate screen. Generated files are editable CDR in CorelDRAW X7 (v17) format.">
               <label className="flex items-center gap-1.5">
                 <input type="checkbox" className="check" checked={settings?.exportPdf ?? false} onChange={(e) => update({ exportPdf: e.target.checked })} />
-                Also export a PDF next to each CDR <Badge>Optional · not built yet</Badge>
+                Also export a PDF next to each single-card CDR <Badge>Not available for single cards yet</Badge>
               </label>
             </Row>
           </Group>

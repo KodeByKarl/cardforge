@@ -80,3 +80,7 @@ Template setup 1024×768 light and 800×480 light; Card preview 1366×768 dark a
 ## Production readiness
 
 The UI is stable and verified for the tested configuration (Windows 11, CorelDRAW 27) with no known open UI defects. It is **not** declared production-ready for the client until X7 compatibility is validated on the client's computer and PDF export and the installer are built and tested.
+
+## Addendum: card-sheet screens (2026-10-30)
+
+New screens (sheet template setup, sheet preview, sheet generation) follow the same design system. Verified by `npm run test:e2e:sheet` (24/24 at 100 %, 125 %, 150 %): no overflow, clipped or overlapping controls at 800×480, 1024×768, 1280×720, 1366×768 and 1920×1080 in light and dark; A4 aspect ratio preserved. Defects found and fixed: Fit was clamped at 25 % so an A4 sheet overflowed at 800×480 (Fit now goes down to 10 %); large counts lacked thousands separators; the portrait template artwork was tiny in the Template screen. Screenshots were taken with synthetic data only. 2560×1440 was not re-run for the new screens. CorelDRAW X7 remains unverified.

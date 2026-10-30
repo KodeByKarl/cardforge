@@ -1,6 +1,7 @@
 import { contextBridge, ipcRenderer, webUtils } from 'electron'
 import { IPC, IPC_EVENTS, type CardForgeApi } from '../shared/ipc'
 import type { JobProgress } from '../shared/template/types'
+import type { ImportProgress } from '../shared/types'
 
 // The renderer gets only these named operations — no raw ipcRenderer, fs, or shell access.
 const api: CardForgeApi = {
@@ -8,6 +9,11 @@ const api: CardForgeApi = {
     pickFile: () => ipcRenderer.invoke(IPC.excelPickFile),
     open: (filePath) => ipcRenderer.invoke(IPC.excelOpen, filePath),
     readSheet: (filePath, sheetName) => ipcRenderer.invoke(IPC.excelReadSheet, filePath, sheetName),
+    onProgress: (listener) => {
+      const handler = (_event: Electron.IpcRendererEvent, progress: ImportProgress) => listener(progress)
+      ipcRenderer.on(IPC_EVENTS.excelProgress, handler)
+      return () => ipcRenderer.removeListener(IPC_EVENTS.excelProgress, handler)
+    },
     pathForFile: (file) => webUtils.getPathForFile(file)
   },
   settings: {
@@ -28,6 +34,10 @@ const api: CardForgeApi = {
     remove: (id) => ipcRenderer.invoke(IPC.templatesRemove, id),
     rename: (id, name) => ipcRenderer.invoke(IPC.templatesRename, id, name),
     saveMapping: (id, mapping) => ipcRenderer.invoke(IPC.templatesSaveMapping, id, mapping),
+    analyzeSheet: (id, options) => ipcRenderer.invoke(IPC.templatesAnalyzeSheet, id, options),
+    prepareSheet: (id, options) => ipcRenderer.invoke(IPC.templatesPrepareSheet, id, options),
+    revertSheet: (id) => ipcRenderer.invoke(IPC.templatesRevertSheet, id),
+    saveSheetMapping: (id, mapping) => ipcRenderer.invoke(IPC.templatesSaveSheetMapping, id, mapping),
     sourceStatus: (id) => ipcRenderer.invoke(IPC.templatesSourceStatus, id),
     pageImages: (id) => ipcRenderer.invoke(IPC.templatesPageImages, id)
   },
@@ -48,6 +58,10 @@ const api: CardForgeApi = {
       ipcRenderer.on(IPC_EVENTS.generationProgress, handler)
       return () => ipcRenderer.removeListener(IPC_EVENTS.generationProgress, handler)
     }
+  },
+  sheets: {
+    plan: (request) => ipcRenderer.invoke(IPC.sheetsPlan, request),
+    start: (request) => ipcRenderer.invoke(IPC.sheetsStart, request)
   },
   app: {
     info: () => ipcRenderer.invoke(IPC.appInfo),

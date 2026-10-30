@@ -27,6 +27,13 @@ export interface SheetData {
   truncated: boolean
 }
 
+/** Worksheet read progress pushed from the main process while a large file is imported. */
+export interface ImportProgress {
+  phase: 'opening' | 'reading' | 'building'
+  done: number
+  total: number
+}
+
 export type FieldKind = 'text' | 'multiline' | 'email' | 'phone'
 
 export interface ColumnConfig {
@@ -41,6 +48,8 @@ export interface ColumnConfig {
   required: boolean
   /** Part of the duplicate-detection key. */
   duplicateKey: boolean
+  /** Identifier column (e.g. control number): every value should appear once; repeats are flagged individually. */
+  unique?: boolean
 }
 
 export interface ImportRecord {
@@ -65,6 +74,7 @@ export type IssueCode =
   | 'INVALID_EMAIL'
   | 'INVALID_PHONE'
   | 'DUPLICATE_RECORD'
+  | 'DUPLICATE_ID'
   | 'LONG_VALUE'
 
 export interface ValidationIssue {

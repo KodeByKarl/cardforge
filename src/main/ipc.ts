@@ -1,5 +1,5 @@
 import { BrowserWindow, app, dialog, ipcMain, shell, type IpcMainInvokeEvent } from 'electron'
-import { IPC } from '../shared/ipc'
+import { IPC, IPC_EVENTS } from '../shared/ipc'
 import type { IpcResult } from '../shared/types'
 import { AppError } from './errors'
 import { getLogDirectory, log } from './logger'
@@ -7,6 +7,7 @@ import type { CorelService } from './services/corel/CorelService'
 import { detectCorelDraw } from './services/corel/detect'
 import { openWorkbook, readSheet } from './services/excel/excelReader'
 import type { GenerationService } from './services/generation/GenerationService'
+import type { SheetGenerationService } from './services/generation/SheetGenerationService'
 import type { JobHistory } from './services/generation/JobHistory'
 import type { PreviewService } from './services/preview/PreviewService'
 import type { TemplateStore } from './services/templates/TemplateStore'
@@ -21,6 +22,7 @@ export interface Services {
   templates: TemplateStore
   preview: PreviewService
   generation: GenerationService
+  sheetGeneration: SheetGenerationService
   history: JobHistory
 }
 
@@ -62,7 +64,10 @@ async function openPath(path: string): Promise<void> {
 }
 
 export function registerIpc(services: Services): void {
-  const { settings, corel, templates, preview, generation, history } = services
+  const { settings, corel, templates, preview, generation, sheetGeneration, history } = services
+  const assertIdle = () => {
+    if (generation.activeJobId || sheetGeneration.activeJobId) throw new AppError('JOB_RUNNING', 'A generation job is already running. Wait for it to finish or cancel it.')
+  }
   // readSheet only accepts files the user explicitly opened in this session.
   const openedSpreadsheets = new Set<string>()
 
@@ -77,11 +82,13 @@ export function registerIpc(services: Services): void {
     return info
   })
 
-  handle(IPC.excelReadSheet, async (_event, filePath, sheetName) => {
+  handle(IPC.excelReadSheet, async (event, filePath, sheetName) => {
     if (typeof filePath !== 'string' || !openedSpreadsheets.has(filePath)) {
       throw new AppError('NOT_OPENED', 'Open the spreadsheet before reading its worksheets.')
     }
-    const data = await readSheet(filePath, sheetName)
+    const data = await readSheet(filePath, sheetName, (phase, done, total) => {
+      if (!event.sender.isDestroyed()) event.sender.send(IPC_EVENTS.excelProgress, { phase, done, total })
+    })
     log.info('excel.sheet_read', { sheet: data.sheetName, rows: data.rows.length, truncated: data.truncated })
     return data
   })
@@ -119,6 +126,20 @@ export function registerIpc(services: Services): void {
   })
   handle(IPC.templatesRename, (_event, id, name) => templates.rename(parseId(id), name))
   handle(IPC.templatesSaveMapping, (_event, id, mapping) => templates.saveMapping(parseId(id), mapping))
+  handle(IPC.templatesAnalyzeSheet, (_event, id, options) => templates.analyzeSheet(parseId(id), options))
+  handle(IPC.templatesPrepareSheet, async (_event, id, options) => {
+    await preview.invalidate(parseId(id), await corel.getAdapter())
+    const record = await templates.prepareSheet(parseId(id), options)
+    await preview.invalidate(record.id)
+    return record
+  })
+  handle(IPC.templatesRevertSheet, async (_event, id) => {
+    await preview.invalidate(parseId(id), await corel.getAdapter())
+    const record = await templates.revertSheet(parseId(id))
+    await preview.invalidate(record.id)
+    return record
+  })
+  handle(IPC.templatesSaveSheetMapping, (_event, id, mapping) => templates.saveSheetMapping(parseId(id), mapping))
   handle(IPC.templatesSourceStatus, (_event, id) => templates.sourceStatus(parseId(id)))
   handle(IPC.templatesPageImages, (_event, id) => templates.pageImages(parseId(id)))
 
@@ -128,8 +149,16 @@ export function registerIpc(services: Services): void {
     pickPath(event, { title: 'Select output folder', properties: ['openDirectory', 'createDirectory'], defaultPath: settings.get().outputDirectory ?? undefined })
   )
   handle(IPC.generationPlan, (_event, request) => generation.plan(request))
-  handle(IPC.generationStart, (_event, request) => generation.start(request))
-  handle(IPC.generationCancel, async (_event, jobId) => generation.cancel(jobId))
+  handle(IPC.generationStart, async (_event, request) => {
+    assertIdle()
+    return generation.start(request)
+  })
+  handle(IPC.generationCancel, async (_event, jobId) => generation.cancel(jobId) || sheetGeneration.cancel(jobId))
+  handle(IPC.sheetsPlan, (_event, request) => sheetGeneration.plan(request))
+  handle(IPC.sheetsStart, async (_event, request) => {
+    assertIdle()
+    return sheetGeneration.start(request)
+  })
   handle(IPC.generationHistory, () => history.list())
   // Only folders/files recorded by a finished job can be opened — never arbitrary paths from the renderer.
   handle(IPC.generationOpenFolder, async (_event, jobId) => {

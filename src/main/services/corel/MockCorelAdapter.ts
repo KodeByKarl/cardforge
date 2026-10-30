@@ -1,5 +1,6 @@
 import { writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
+import type { NameAssignment } from '../../../shared/sheet/types'
 import type { ApplyResult, ExportedPage, ShapeValues, TemplateInspection } from '../../../shared/template/types'
 import { AppError } from '../../errors'
 import type { CorelAdapter, CorelConnection, DocHandle } from './CorelAdapter'
@@ -47,6 +48,12 @@ export class MockCorelAdapter implements CorelAdapter {
     return handle
   }
 
+  async docInfo(handle: DocHandle): Promise<{ pages: number }> {
+    this.check('docInfo')
+    this.doc(handle)
+    return { pages: this.inspection.pages.length }
+  }
+
   async closeDocument(handle: DocHandle): Promise<void> {
     this.check('closeDocument')
     this.open.delete(handle)
@@ -75,6 +82,18 @@ export class MockCorelAdapter implements CorelAdapter {
     return result
   }
 
+  async addSheetPages(handle: DocHandle, count: number): Promise<number> {
+    this.check('addSheetPages', String(count))
+    this.doc(handle)
+    return this.inspection.pages.length + count
+  }
+
+  async nameShapes(handle: DocHandle, items: NameAssignment[]): Promise<number> {
+    this.check('nameShapes', JSON.stringify(items))
+    this.doc(handle)
+    return items.length
+  }
+
   async exportPages(handle: DocHandle, options: { dir: string; prefix: string; dpi: number; pages: number[] }): Promise<ExportedPage[]> {
     this.check('exportPages')
     this.doc(handle)
@@ -94,6 +113,12 @@ export class MockCorelAdapter implements CorelAdapter {
     const doc = this.doc(handle)
     await writeFile(path, `${MOCK_CDR_CONTENT}\n${JSON.stringify(doc.values)}`, 'utf8')
     doc.path = path
+  }
+
+  async exportPdf(handle: DocHandle, path: string): Promise<void> {
+    this.check('exportPdf', path)
+    this.doc(handle)
+    await writeFile(path, '%PDF-1.7 mock', 'utf8')
   }
 
   async dispose(): Promise<void> {

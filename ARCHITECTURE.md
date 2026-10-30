@@ -92,3 +92,20 @@ tests/           unit tests (Vitest) · tests/integration (real CorelDRAW) · fi
 | Mapping by header label | Reusable across future spreadsheets with the same headers |
 | One CDR per record, X7 format | Editable output X7 can open; imposition waits for print specs |
 | Deferred rename | CorelDRAW locks the last-saved file; still never leaves partial files under final names |
+
+## Card-sheet production (client workflow)
+
+```
+Excel (40k+ rows) → import (chunked read, paged table, identifier checks)
+CDR with unnamed text → inspect (unnamed objects + positions) → detectSheetGrid (pure) → prepare (names objects in the
+private library copy; template.original.cdr kept) → map one reference card to columns (SheetMapping, per line)
+→ planSheets / planBatches (pure, provably exact cover) → SheetGenerationService
+      per output file: private working copy → addSheetPages (CopyToLayer) → fill each page once (page-scoped apply)
+      → remove artwork of empty positions → SaveAs X7 → optional PDF → verify → atomic rename → manifest
+```
+
+* `src/shared/sheet/` is pure TypeScript: grid detection, role matching, line composition, mapping suggestions and checks, sheet and batch planning, verification.
+* `TemplateStore.analyzeSheet / prepareSheet / revertSheet / saveSheetMapping` hold the template side; `PreviewService` renders a sheet through the same named-object path as single cards (plus empty-position clearing) and bounds its cache by bytes.
+* `SheetGenerationService` runs one job at a time (shared guard with the single-card engine), writes `.cardforge-<fingerprint>.manifest.json`, a report and a print summary with row numbers only, cancels between sheets, retries a batch once on transient CorelDRAW errors and records the retry.
+* New bridge commands: `nameShapes`, `addSheetPages`, `exportPdf`, `docInfo`; `apply` gained `page`, `keep` and `clearRegions`; `openDoc` gained `light`.
+* Renderer: `SheetTemplate` (prepare + mapping), `SheetPreview`, `SheetGenerate`; the shell, nav status and gates treat sheet and single-card templates uniformly through `useTemplates().issues`.

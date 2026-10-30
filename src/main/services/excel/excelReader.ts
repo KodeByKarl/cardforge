@@ -7,8 +7,15 @@ import { AppError } from '../../errors'
 import { MAX_SPREADSHEET_BYTES, assertReadableFile, assertSafePath } from '../../paths'
 
 export const SPREADSHEET_EXTENSIONS = ['.xlsx', '.csv'] as const
-export const MAX_ROWS = 20_000
+/** Excel's own worksheet limit: nothing a real workbook contains is ever cut off silently. */
+export const MAX_ROWS = 1_048_576
 export const MAX_COLUMNS = 200
+const CHUNK_ROWS = 2_000
+
+export type ImportPhase = 'opening' | 'reading' | 'building'
+export type ProgressListener = (phase: ImportPhase, done: number, total: number) => void
+
+const tick = () => new Promise<void>((resolve) => setImmediate(resolve))
 
 /**
  * Converts one ExcelJS cell value to the text an operator would expect on a card.
@@ -87,7 +94,8 @@ async function loadWorkbook(path: string): Promise<ExcelJS.Workbook> {
   return workbook
 }
 
-function readWorksheet(sheet: ExcelJS.Worksheet): { rows: CellGrid; truncated: boolean } {
+/** Extracts rows in chunks, yielding to the event loop between chunks so IPC stays responsive and progress can be reported. */
+async function readWorksheet(sheet: ExcelJS.Worksheet, onProgress?: ProgressListener): Promise<{ rows: CellGrid; truncated: boolean }> {
   const rowCount = Math.min(sheet.rowCount, MAX_ROWS)
   const columnCount = Math.min(sheet.columnCount, MAX_COLUMNS)
   const rows: CellGrid = []
@@ -100,7 +108,12 @@ function readWorksheet(sheet: ExcelJS.Worksheet): { rows: CellGrid; truncated: b
       values.push(cell.isMerged && cell.master !== cell ? '' : cellToString(cell.value, cell.numFmt))
     }
     rows.push(values)
+    if (r % CHUNK_ROWS === 0) {
+      onProgress?.('reading', r, rowCount)
+      await tick()
+    }
   }
+  onProgress?.('reading', rowCount, rowCount)
   return { rows: trimGrid(rows), truncated: sheet.rowCount > MAX_ROWS || sheet.columnCount > MAX_COLUMNS }
 }
 
@@ -130,14 +143,15 @@ export async function openWorkbook(untrustedPath: unknown): Promise<WorkbookInfo
   return { filePath: path, fileName: basename(path), format, sizeBytes, sheets }
 }
 
-export async function readSheet(untrustedPath: unknown, sheetName: unknown): Promise<SheetData> {
+export async function readSheet(untrustedPath: unknown, sheetName: unknown, onProgress?: ProgressListener): Promise<SheetData> {
   const path = assertSafePath(untrustedPath, SPREADSHEET_EXTENSIONS)
   await assertReadableFile(path, MAX_SPREADSHEET_BYTES)
   if (typeof sheetName !== 'string') throw new AppError('INVALID_SHEET', 'No worksheet was selected.')
   if (formatOf(path) === 'csv') return { sheetName: CSV_SHEET_NAME, ...(await readCsv(path)) }
 
+  onProgress?.('opening', 0, 0)
   const workbook = await loadWorkbook(path)
   const sheet = workbook.getWorksheet(sheetName)
   if (!sheet) throw new AppError('SHEET_NOT_FOUND', `Worksheet "${sheetName}" was not found in the workbook.`)
-  return { sheetName, ...readWorksheet(sheet) }
+  return { sheetName, ...(await readWorksheet(sheet, onProgress)) }
 }

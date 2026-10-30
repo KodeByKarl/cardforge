@@ -1,8 +1,8 @@
-import { createContext, useCallback, useContext, useMemo, useReducer, useRef, type ReactNode } from 'react'
+import { createContext, useCallback, useContext, useEffect, useMemo, useReducer, useRef, useState, type ReactNode } from 'react'
 import { buildDataset } from '../../../shared/import/dataset'
 import { buildColumns, detectHeaderRow } from '../../../shared/import/headers'
 import { validateDataset } from '../../../shared/import/validate'
-import type { CellGrid, ColumnConfig, Dataset, SheetData, ValidationResult, WorkbookInfo } from '../../../shared/types'
+import type { CellGrid, ColumnConfig, Dataset, ImportProgress, SheetData, ValidationResult, WorkbookInfo } from '../../../shared/types'
 import { api, errorMessage, unwrap } from '../api'
 
 export type ImportPhase = 'empty' | 'opening' | 'reading' | 'ready' | 'error'
@@ -75,6 +75,8 @@ interface JobContextValue {
   state: ImportState
   dataset: Dataset | null
   validation: ValidationResult | null
+  /** Live progress while a large worksheet is being read; null otherwise. */
+  importProgress: ImportProgress | null
   openFile(path: string): Promise<void>
   selectSheet(name: string): Promise<void>
   setHeaderRow(index: number): void
@@ -86,14 +88,20 @@ const JobContext = createContext<JobContextValue | null>(null)
 
 export function JobProvider({ children }: { children: ReactNode }) {
   const [state, dispatch] = useReducer(reducer, INITIAL)
+  const [importProgress, setImportProgress] = useState<ImportProgress | null>(null)
+  useEffect(() => api.excel.onProgress(setImportProgress), [])
   // Each request gets a ticket; responses for superseded requests (e.g. a second file dropped) are ignored.
   const ticket = useRef(0)
 
   const readSheet = useCallback(async (workbook: WorkbookInfo, sheetName: string, myTicket: number) => {
+    setImportProgress(null)
     dispatch({ type: 'readStart', sheetName })
     try {
       const sheet = await unwrap(api.excel.readSheet(workbook.filePath, sheetName))
-      if (ticket.current === myTicket) dispatch({ type: 'readDone', sheet })
+      if (ticket.current === myTicket) {
+        setImportProgress(null)
+        dispatch({ type: 'readDone', sheet })
+      }
     } catch (err) {
       if (ticket.current === myTicket) dispatch({ type: 'fail', error: errorMessage(err) })
     }
@@ -134,6 +142,7 @@ export function JobProvider({ children }: { children: ReactNode }) {
     state,
     dataset,
     validation,
+    importProgress,
     openFile,
     selectSheet,
     setHeaderRow: (index) => dispatch({ type: 'setHeaderRow', index }),
